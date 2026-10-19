@@ -5,8 +5,9 @@
 // già passati sotto la linea guida: 0 = prima riga sulla guida, maxOffset = ultima riga sulla guida.
 import { settings, FONTS } from './settings.js';
 import { db } from './db.js';
-import { h, clamp, toast, fmtTime, estimateSeconds } from './util.js';
+import { h, clamp, toast, fmtTime, estimateSeconds, WPM } from './util.js';
 import { buildPanel } from './panel.js';
+import { VoiceListener, VOICE_LANGS, WORD_RE, norm, findMatch, voiceSupported } from './voice.js';
 
 const BAR_HIDE_MS = 2500;
 const DRAG_THRESHOLD = 8;
@@ -43,13 +44,24 @@ export class Prompter {
     this.follower = null;   // secondo schermo: segue un iPad invece di scorrere da solo
     this.cfgCache = null;
     this.extraPanel = [];
+    // modalità voce
+    this.words = [];          // parole dello script: {n: normalizzata, node, start, end}
+    this.wordY = new Map();   // posizione verticale (cima della riga) delle parole già misurate
+    this.voiceIndex = -1;     // ultima parola agganciata
+    this.voiceDirty = false;  // il testo è stato spostato a mano: riagganciare dalla nuova posizione
+    this.voiceState = 'off';
+    this.lastHeard = '';
+    this.voice = new VoiceListener({
+      onWords: w => this.heard(w),
+      onState: st => { this.voiceState = st; this.render(true); },
+    });
 
     this.loop = this.loop.bind(this);
     this.onKey = this.onKey.bind(this);
     this.bindStage();
     this.bindBar();
     this.refreshPanel = () => {};
-    settings.subscribe(() => { if (this.isOpen && !this.follower) { this.applyStyle(); this.refreshPanel(); } });
+    settings.subscribe(() => { if (this.isOpen && !this.follower) { this.applyStyle(); this.refreshPanel(); this.syncVoice(); } });
     new ResizeObserver(() => {
       this.cfgCache = null;
       if (this.isOpen) { this.layout(); this.render(true); }
@@ -112,10 +124,19 @@ export class Prompter {
 
   renderText(text) {
     const frag = document.createDocumentFragment();
+    this.words = [];
     for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
-      frag.append(h('p', null, line.trim() === '' ? ' ' : line));
+      const p = h('p', null, line.trim() === '' ? ' ' : line);
+      const node = p.firstChild;
+      for (const m of line.matchAll(WORD_RE)) {
+        this.words.push({ n: norm(m[0]), node, start: m.index, end: m.index + m[0].length });
+      }
+      frag.append(p);
     }
     this.el.text.replaceChildren(frag);
+    this.wordY.clear();
+    this.voiceIndex = -1;
+    this.voiceDirty = false;
   }
 
   scriptDuration() {
@@ -205,6 +226,77 @@ export class Prompter {
     this.maxOffset = Math.max(0, this.el.text.offsetHeight - this.linePx);
     this.offset = clamp(progress * this.maxOffset, 0, this.maxOffset);
     if (this.anim) this.anim.to = clamp(this.anim.to, 0, this.maxOffset);
+    this.wordY.clear();
+  }
+
+  // ---------- modalità voce ----------
+
+  // Cima della riga che contiene la parola i, in pixel dall'inizio del testo.
+  wordTop(i) {
+    let y = this.wordY.get(i);
+    if (y !== undefined) return y;
+    const w = this.words[i];
+    const r = document.createRange();
+    r.setStart(w.node, w.start);
+    r.setEnd(w.node, w.end);
+    const rect = r.getBoundingClientRect(), tr = this.el.text.getBoundingClientRect();
+    // il testo può essere ribaltato in verticale: si misura dal lato giusto
+    y = this.cfg().flipV ? tr.bottom - rect.bottom : rect.top - tr.top;
+    y = Math.floor((y + 1) / this.linePx) * this.linePx;
+    this.wordY.set(i, y);
+    return y;
+  }
+
+  // Ultima parola che sta sopra il punto di lettura attuale (dopo un trascinamento o un salto).
+  reanchor() {
+    this.voiceDirty = false;
+    this.lastHeard = '';
+    let lo = 0, hi = this.words.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.wordTop(mid) < this.offset - this.linePx / 2) lo = mid + 1; else hi = mid;
+    }
+    this.voiceIndex = lo - 1;
+  }
+
+  heard(spoken) {
+    if (this.phase !== 'playing' || this.dragging || !this.words.length) return;
+    const key = spoken.join(' ');
+    if (key === this.lastHeard) return; // stesse parole: niente di nuovo
+    this.lastHeard = key;
+    if (this.voiceDirty) this.reanchor();
+    const j = findMatch(this.words, spoken, this.voiceIndex);
+    if (j > this.voiceIndex) this.voiceIndex = j;
+  }
+
+  syncVoice() {
+    const on = this.isOpen && !this.follower && this.phase === 'playing' && this.cfg().scrollMode === 'voice';
+    if (on) {
+      if (!voiceSupported()) {
+        toast('Questo browser non riconosce la voce: usa Safari su iPad/iPhone o Chrome', 4500);
+        this.pause();
+        return;
+      }
+      if (this.voiceDirty) this.reanchor();
+      if (!this.voice.active) this.lastHeard = '';
+      this.voice.start(this.cfg().voiceLang);
+    } else if (this.voice.active) {
+      this.voice.stop();
+    }
+  }
+
+  voiceLabel() {
+    return {
+      listening: 'voce ● in ascolto', restarting: 'voce ● in ascolto', off: 'voce',
+      denied: 'voce: microfono negato', network: 'voce: serve internet', language: 'voce: lingua non disponibile',
+      unsupported: 'voce: non disponibile',
+    }[this.voiceState] || 'voce';
+  }
+
+  speedLabel() {
+    const s = this.cfg();
+    if (s.scrollMode === 'voice') return this.voiceLabel();
+    return s.scrollMode === 'duration' ? 'durata ' + fmtTime(this.runDuration) : s.speed + ' righe/min';
   }
 
   // ---------- ciclo di animazione ----------
@@ -229,6 +321,17 @@ export class Prompter {
       const k = 1 - Math.pow(1 - t, 3);
       this.offset = this.anim.from + (this.anim.to - this.anim.from) * k;
       if (t >= 1) this.anim = null;
+    } else if (this.phase === 'playing' && !this.dragging && this.cfg().scrollMode === 'voice') {
+      // la riga dell'ultima parola agganciata va verso la linea guida, solo in avanti
+      if (this.voiceDirty) this.reanchor();
+      if (this.voiceIndex >= 0) {
+        const target = Math.min(this.wordTop(this.voiceIndex), this.maxOffset);
+        if (target > this.offset) this.offset += (target - this.offset) * Math.min(1, dt * 4);
+        if (this.voiceIndex >= this.words.length - 1 && this.offset >= target - 1) {
+          this.setPhase('paused');
+          toast('Fine dello script');
+        }
+      }
     } else if (this.phase === 'playing' && !this.dragging) {
       this.offset += this.pxPerSec() * dt;
       if (this.offset >= this.maxOffset) {
@@ -243,6 +346,7 @@ export class Prompter {
 
   pxPerSec() {
     const s = this.cfg();
+    if (s.scrollMode === 'voice') return 0;
     if (s.scrollMode === 'duration') {
       const left = Math.max(0.5, this.runDuration - this.elapsed);
       return Math.max(0, this.maxOffset - this.offset) / left;
@@ -258,6 +362,7 @@ export class Prompter {
     }
     const s = this.cfg();
     if (s.scrollMode === 'duration') return this.runDuration - this.elapsed;
+    if (s.scrollMode === 'voice') return ((this.words.length - 1 - Math.max(0, this.voiceIndex)) / WPM) * 60;
     const v = (s.speed / 60) * this.linePx;
     return v > 0 ? Math.max(0, this.maxOffset - this.offset) / v : 0;
   }
@@ -291,7 +396,7 @@ export class Prompter {
     }
 
     // velocità e avanzamento per l'operatore
-    const sp = s.scrollMode === 'duration' ? 'durata ' + fmtTime(this.runDuration) : s.speed + ' righe/min';
+    const sp = this.speedLabel();
     if (force || sp !== sh.sp) { sh.sp = sp; e.speed.textContent = sp; }
     if (!this.seeking) {
       const p = this.maxOffset > 0 ? Math.round((this.offset / this.maxOffset) * 1000) : 0;
@@ -358,6 +463,7 @@ export class Prompter {
 
   setPhase(p) {
     this.phase = p;
+    this.syncVoice();
     this.updatePlayButton();
     this.render(true);
     this.showBar();
@@ -369,6 +475,9 @@ export class Prompter {
     this.anim = null;
     this.offset = 0;
     this.elapsed = 0;
+    this.voiceIndex = -1;
+    this.voiceDirty = false;
+    this.lastHeard = '';
     this.runDuration = this.scriptDuration();
     this.render(true);
     this.emitStatus();
@@ -381,17 +490,23 @@ export class Prompter {
     const base = this.anim ? this.anim.to : this.offset;
     const to = clamp(base + dir * s.jumpLines * this.linePx, 0, this.maxOffset);
     this.anim = { from, to, t0: performance.now(), dur: 220 };
+    this.voiceDirty = true;
   }
 
   seek(frac) {
     this.anim = null;
     this.offset = clamp(frac, 0, 1) * this.maxOffset;
+    this.voiceDirty = true;
     this.render(true);
     this.emitStatus();
   }
 
   adjustSpeed(dir) {
     const s = this.cfg();
+    if (s.scrollMode === 'voice') {
+      toast('In modalità voce il testo segue chi parla');
+      return;
+    }
     if (s.scrollMode === 'duration') {
       // In modalità durata, + e − accorciano o allungano la lettura in corso di 5 s (non si salva).
       this.runDuration = Math.max(Math.ceil(this.elapsed) + 5, this.runDuration - dir * 5);
@@ -569,6 +684,7 @@ export class Prompter {
       const p = this.ptr;
       if (!p || p.id !== e.pointerId) return;
       this.ptr = null;
+      if (this.dragging) this.voiceDirty = true;
       this.dragging = false;
       if (!p.moved && e.type === 'pointerup') this.toggle();
     };
@@ -581,6 +697,7 @@ export class Prompter {
       this.anim = null;
       const dir = this.cfg().flipV ? -1 : 1;
       this.offset = clamp(this.offset + e.deltaY * dir, 0, this.maxOffset);
+      this.voiceDirty = true;
       this.render();
     }, { passive: false });
   }
@@ -609,7 +726,15 @@ export class Prompter {
         { type: 'range', key: 'marginBottom', label: 'Basso', min: 0, max: 45, step: 0.5, fmt: pct },
       ] },
       { title: 'Scorrimento', items: [
-        { type: 'segmented', key: 'scrollMode', label: 'Modalità', options: [['speed', 'Velocità'], ['duration', 'Durata']] },
+        { type: 'segmented', key: 'scrollMode', label: 'Modalità', options: [['speed', 'Velocità'], ['duration', 'Durata'], ['voice', 'Voce']] },
+        { type: 'select', key: 'voiceLang', label: 'Lingua di chi parla', options: VOICE_LANGS,
+          show: s => s.scrollMode === 'voice' },
+        { type: 'custom', label: '', show: s => s.scrollMode === 'voice', render: row => {
+          row.append(h('div', 'pnote', voiceSupported()
+            ? 'Con play il microfono ascolta e il testo avanza mentre leggi. Se salti o improvvisi, aspetta e si riaggancia quando torni allo script. Serve internet (su alcuni dispositivi funziona anche senza).'
+            : 'Questo browser non ha il riconoscimento vocale: usa Safari su iPad e iPhone, oppure Chrome.'));
+          return null;
+        } },
         { type: 'range', key: 'speed', label: 'Velocità', min: 1, max: 200, step: 1, fmt: v => v + ' righe/min',
           show: s => s.scrollMode === 'speed' },
         { type: 'custom', label: 'Durata di questo script', show: s => s.scrollMode === 'duration',
@@ -711,7 +836,7 @@ export class Prompter {
       progress: this.maxOffset > 0 ? this.offset / this.maxOffset : 0,
       velocity: moving ? this.pxPerSec() / this.maxOffset : 0, // frazione di script al secondo
       elapsed: this.elapsed, remaining: this.remaining(), countLeft: this.countLeft,
-      speedLabel: s.scrollMode === 'duration' ? 'durata ' + fmtTime(this.runDuration) : s.speed + ' righe/min',
+      speedLabel: this.speedLabel(),
       flipH: s.flipH, flipV: s.flipV, stageW: this.el.stage.clientWidth,
     };
   }

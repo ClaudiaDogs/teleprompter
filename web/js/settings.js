@@ -19,8 +19,8 @@ export const DEFAULTS = Object.freeze({
   flipH: false, flipV: false,
   // margini in % dello schermo
   marginLeft: 8, marginRight: 8, marginTop: 0, marginBottom: 0,
-  // scorrimento: 'speed' (righe al minuto) o 'duration' (durata dello script)
-  scrollMode: 'speed', speed: 20, jumpLines: 3,
+  // scorrimento: 'speed' (righe al minuto), 'duration' (durata dello script) o 'voice' (segue chi parla)
+  scrollMode: 'speed', speed: 20, jumpLines: 3, voiceLang: 'it-IT',
   // linea guida (posizione in % dell'area del testo)
   guideVisible: true, guideStyle: 'arrows', guidePos: 33, guideOpacity: 0.8, guideColor: '#ff3b30',
   // conto alla rovescia

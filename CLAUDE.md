@@ -31,8 +31,16 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   `Prompter.open(script, {follow})`: segue la percentuale con estrapolazione della velocità e riscala il carattere
   sulla propria larghezza (`cfg()`), con ribaltamenti propri (localStorage `tp.display`). `remote.js` è la vista iPhone.
   Link d'invito: `…/#collega=<codice>`. Serve internet su tutti i dispositivi.
+- Voce (`voice.js`, modalità di scorrimento `voice`): Web Speech API (`webkitSpeechRecognition`), continuo con
+  riavvio automatico. `findMatch` allinea le ultime 5 parole sentite (LCS con parole «uguali» = identiche, prefisso
+  o una lettera diversa; paroline pesano 0,5) a una finestra di 30 parole avanti (soglia 2) o 150 (soglia 3,5).
+  Solo in avanti. Il prompter porta la riga dell'ultima parola agganciata sulla guida (`wordTop` via Range, anche
+  ribaltato); dopo trascinamenti/salti si riaggancia dalla nuova posizione. Prova senza microfono: sostituire
+  `window.webkitSpeechRecognition` con una classe finta che chiama `onresult` (il riconoscitore si legge al play).
 - Prova di collegamento in locale: iPad su http://localhost:8080 e client su http://127.0.0.1:8080 (memorie separate).
 - Passi: 1 prompter di base ✔ · 2 import PDF + backup ✔ · 3 hosting HTTPS su GitHub Pages ✔
+  · 4 telecomando + secondo schermo ✔ (0.3) · ritocchi telefono ✔ (0.3.1) · 5 voce ✔ (0.4.0)
+  Idee per il futuro: segnaposti/capitoli, note di regia, profili di impostazioni, .docx, modifica dal telefono.
   · 4 telecomando iPhone + secondo schermo (PeerJS/WebRTC proposto, PIN) · 5 scorrimento che segue la voce (webkitSpeechRecognition).
 
 ---

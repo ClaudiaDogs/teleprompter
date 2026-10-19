@@ -19,7 +19,7 @@ export class Prompter {
       view: q('view-prompter'), stage: q('stage'), mirror: q('mirror'), viewport: q('viewport'),
       clip: q('clip'), text: q('text'), guide: q('guide'), timer: q('timer'), countdown: q('countdown'),
       bar: q('opbar'), play: q('op-play'), speed: q('op-speed'), time: q('op-time'), progress: q('op-progress'),
-      flipH: q('op-flipH'), flipV: q('op-flipV'), settingsBtn: q('op-settings'),
+      flipH: q('op-flipH'), flipV: q('op-flipV'), settingsBtn: q('op-settings'), fullscreen: q('op-fullscreen'),
       panel: q('panel'), panelBody: q('panel-body'),
     };
     this.isOpen = false;
@@ -86,7 +86,9 @@ export class Prompter {
     this.applyStyle();
     this.refreshPanel();
     this.updatePlayButton();
+    this.updateFullscreenButton();
     this.showBar();
+    requestAnimationFrame(() => this.updateBarScrollHint());
     document.addEventListener('keydown', this.onKey);
     this.lockScreen();
     this.last = performance.now();
@@ -103,6 +105,7 @@ export class Prompter {
     cancelAnimationFrame(this.raf);
     clearTimeout(this.barTimer);
     document.removeEventListener('keydown', this.onKey);
+    if (Prompter.fsElement()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document)?.catch?.(() => {});
     this.releaseScreen();
     this.onClose();
   }
@@ -307,11 +310,15 @@ export class Prompter {
         this.follower.onFlip?.(this.follower);
         this.cfgCache = null;
         this.applyStyle();
-      } else if (name === 'close') { this.close(); return; }
+      } else if (name === 'fullscreen') this.toggleFullscreen();
+      else if (name === 'close') { this.close(); return; }
       this.showBar();
       return;
     }
     switch (name) {
+      case 'fontSmaller': this.adjustFont(-1); break;
+      case 'fontBigger': this.adjustFont(+1); break;
+      case 'fullscreen': this.toggleFullscreen(); break;
       case 'toggle': this.toggle(); break;
       case 'play': if (this.phase === 'paused') this.play(); break;
       case 'pause': this.pause(); break;
@@ -398,6 +405,53 @@ export class Prompter {
     this.render(true);
   }
 
+  adjustFont(dir) {
+    const s = this.cfg();
+    const step = Math.max(2, Math.round(s.fontSize * 0.08));
+    const v = clamp(Math.round(s.fontSize + dir * step), 16, 220);
+    settings.set({ fontSize: v });
+    toast('Testo ' + v + ' px');
+  }
+
+  // ---------- schermo intero ----------
+
+  static fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  static fsSupported() {
+    const el = document.documentElement;
+    return !!(el.requestFullscreen || el.webkitRequestFullscreen) && (document.fullscreenEnabled ?? document.webkitFullscreenEnabled ?? true);
+  }
+  static standalone() { return matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone === true; }
+
+  async toggleFullscreen() {
+    const d = document, el = d.documentElement;
+    if (Prompter.fsElement()) {
+      await (d.exitFullscreen || d.webkitExitFullscreen)?.call(d)?.catch?.(() => {});
+      return;
+    }
+    if (Prompter.fsSupported()) {
+      try { await (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' }); return; }
+      catch { /* rifiutato: si spiega l'alternativa */ }
+    }
+    toast(Prompter.standalone()
+      ? 'L\'app è già a tutto schermo: la barra sparisce da sola durante lo scorrimento'
+      : 'Questo browser non permette lo schermo intero. Aggiungi l\'app alla schermata Home (Condividi › Aggiungi alla schermata Home): si apre a tutto schermo.', 6000);
+  }
+
+  updateFullscreenButton() {
+    const fs = !!Prompter.fsElement();
+    this.el.fullscreen.classList.toggle('on', fs);
+    this.el.fullscreen.setAttribute('aria-label', fs ? 'Esci dallo schermo intero' : 'Schermo intero');
+    // nell'app installata senza schermo intero del browser il tasto non serve
+    this.el.fullscreen.hidden = !fs && !Prompter.fsSupported() && Prompter.standalone();
+  }
+
+  // Sfumatura ai lati della barra quando ci sono altri tasti da scorrere.
+  updateBarScrollHint() {
+    const r = this.el.bar.querySelector('.op-row');
+    this.el.bar.classList.toggle('more-left', r.scrollLeft > 2);
+    this.el.bar.classList.toggle('more-right', r.scrollLeft + r.clientWidth < r.scrollWidth - 2);
+  }
+
   updatePlayButton() {
     const playing = this.phase !== 'paused';
     this.el.play.classList.toggle('playing', playing);
@@ -440,6 +494,12 @@ export class Prompter {
       this.showBar();
     });
     e.progress.addEventListener('change', () => { this.seeking = false; this.showBar(); });
+    const row = e.bar.querySelector('.op-row');
+    row.addEventListener('scroll', () => { this.updateBarScrollHint(); this.showBar(); }, { passive: true });
+    new ResizeObserver(() => this.updateBarScrollHint()).observe(row);
+    for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+      document.addEventListener(ev, () => this.updateFullscreenButton());
+    }
     document.getElementById('panel-close').addEventListener('click', () => this.setPanel(false));
     document.getElementById('panel-reset').addEventListener('click', () => {
       if (confirm('Ripristinare tutte le impostazioni predefinite?')) { settings.reset(); toast('Impostazioni ripristinate'); }
@@ -453,7 +513,10 @@ export class Prompter {
       ' ': 'toggle', Enter: 'toggle', ArrowUp: 'faster', ArrowDown: 'slower',
       ArrowLeft: 'back', PageUp: 'back', ArrowRight: 'forward', PageDown: 'forward',
       r: 'restart', R: 'restart', h: 'flipH', H: 'flipH', v: 'flipV', V: 'flipV', Escape: 'close',
+      '+': 'fontBigger', '=': 'fontBigger', '-': 'fontSmaller', f: 'fullscreen', F: 'fullscreen',
     };
+    // con lo schermo intero attivo Esc lo chiude già il browser
+    if (e.key === 'Escape' && Prompter.fsElement()) return;
     const c = map[e.key];
     if (!c) return;
     e.preventDefault();

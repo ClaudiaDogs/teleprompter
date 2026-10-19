@@ -100,7 +100,7 @@ button { cursor: pointer; }
 #clip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
 #text {
   position: absolute; left: 0; right: 0; top: 0; will-change: transform;
-  white-space: pre-wrap; overflow-wrap: break-word;
+  white-space: pre-wrap; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto;
 }
 #text p { margin: 0; }
 
@@ -210,11 +210,11 @@ input[type=range] { accent-color: var(--accent); width: 100%; height: 30px; marg
 #lib-link.linked .link-dot { background: #30d158; }
 #op-link { color: #30d158; font-size: 14px; padding-left: 12px; white-space: nowrap; }
 
-#link-dialog {
+dialog.sheet {
   width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); padding: 0; border: 1px solid var(--line);
   border-radius: 16px; background: var(--card); color: var(--text); overflow: auto;
 }
-#link-dialog::backdrop { background: rgba(0, 0, 0, .6); }
+dialog.sheet::backdrop { background: rgba(0, 0, 0, .6); }
 .dlg-head { display: flex; align-items: center; padding: 6px 8px 6px 20px; border-bottom: 1px solid var(--line); }
 .dlg-head h2 { flex: 1; margin: 0; font-size: 18px; }
 .dlg-body { padding: 4px 20px 20px; }
@@ -240,7 +240,7 @@ input[type=range] { accent-color: var(--accent); width: 100%; height: 30px; marg
 .host-box p { margin: 0; }
 
 /* secondo schermo */
-#view-prompter.follower [data-cmd]:not([data-cmd="close"]):not([data-cmd="flipH"]):not([data-cmd="flipV"]),
+#view-prompter.follower [data-cmd]:not([data-cmd="close"]):not([data-cmd="flipH"]):not([data-cmd="flipV"]):not([data-cmd="fullscreen"]),
 #view-prompter.follower #op-progress, #view-prompter.follower #op-speed, #view-prompter.follower .op-sep,
 #view-prompter.follower #op-link { display: none; }
 #follow-wait {
@@ -286,3 +286,41 @@ input[type=range] { accent-color: var(--accent); width: 100%; height: 30px; marg
 .rm-btn.on { color: var(--blue); border-color: var(--blue); }
 .rm-btn.danger { color: #ff6961; }
 .rm-speed { flex: 1; text-align: center; font-size: 18px; font-variant-numeric: tabular-nums; }
+#paste-text {
+  width: 100%; min-height: 40vh; margin: 4px 0 14px; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); font-size: 17px; line-height: 1.45; resize: vertical;
+}
+
+/* barra dei comandi scorrevole quando lo schermo è stretto (telefono) */
+.op-row {
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  touch-action: pan-x; overscroll-behavior-x: contain;
+}
+.op-row::-webkit-scrollbar { display: none; }
+#opbar.more-right .op-row { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+#opbar.more-left .op-row { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
+#opbar.more-left.more-right .op-row { -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
+.op-font { font-weight: 700; line-height: 1; gap: 0; grid-auto-flow: column; align-items: baseline; }
+.op-font span { font-size: 17px; }
+.op-font.big span { font-size: 24px; }
+.op-font small { font-size: 15px; margin-left: 1px; }
+#op-fullscreen .i-fs-exit, #op-fullscreen.on .i-fs { display: none; }
+#op-fullscreen.on .i-fs-exit { display: block; }
+#op-fullscreen.on { color: var(--text); }
+
+@media (max-width: 700px) {
+  .op-btn { width: 46px; height: 48px; }
+  .op-play { width: 60px; margin-left: 6px; }
+  .op-sep { margin: 0 4px; }
+  #op-speed { min-width: 92px; font-size: 13px; }
+  #op-time { font-size: 13px; }
+  .topbar h1 { flex-basis: 100%; }
+  .topbar .btn { flex: 1; padding: 9px 10px; }
+  #view-editor .topbar .btn { flex: 0 0 auto; }
+  .title-input { flex-basis: 100%; order: 3; }
+  .editor-meta { gap: 8px 12px; }
+  #ed-text { font-size: 18px; padding: 14px; }
+  .lib-footer .btn { flex: 1; }
+  #app-version { flex-basis: 100%; text-align: right; }
+  .cl-fields input { width: 8ch; font-size: 22px; }
+}

@@ -33,9 +33,17 @@ export const DEFAULTS = Object.freeze({
 
 const KEY = 'tp.settings.v1';
 
+// Al primo avvio il carattere si adatta allo schermo: 64 px su iPad, più piccolo sul telefono.
+function firstDefaults() {
+  const side = Math.min(screen.width || innerWidth, screen.height || innerHeight);
+  return { ...DEFAULTS, fontSize: Math.round(Math.min(DEFAULTS.fontSize, Math.max(32, side / 12))) };
+}
+
 function load() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
-  catch { return { ...DEFAULTS }; }
+  try {
+    const saved = localStorage.getItem(KEY);
+    return saved ? { ...DEFAULTS, ...JSON.parse(saved) } : firstDefaults();
+  } catch { return { ...DEFAULTS }; }
 }
 
 let state = load();
@@ -60,7 +68,7 @@ export const settings = {
     subs.forEach(f => f(patch));
   },
   reset() {
-    state = { ...DEFAULTS };
+    state = firstDefaults();
     persist();
     subs.forEach(f => f(state));
   },

@@ -133,15 +133,39 @@ export class Library {
     }
   }
 
-  async paste() {
-    let text = '';
-    try { text = await navigator.clipboard.readText(); } catch { /* permesso negato o non disponibile */ }
-    text = tidy(text || '');
-    const s = text ? newScript(titleFrom(text), text) : newScript();
-    await db.put(s);
-    if (text) toast('Script creato dagli appunti');
-    else toast('Incolla il testo nell\'editor', 2500);
-    this.onEdit(s, { focus: !text });
+  // Riquadro dedicato: tenendo premuto nel campo, ogni browser del telefono offre «Incolla».
+  // «Leggi dagli appunti» c'è solo dove il browser lo permette.
+  bindPaste() {
+    const q = id => document.getElementById(id);
+    const dlg = this.pasteDlg = q('paste-dialog');
+    const area = this.pasteArea = q('paste-text');
+    const clip = q('paste-clip');
+    clip.hidden = !navigator.clipboard?.readText;
+    q('paste-close').addEventListener('click', () => dlg.close());
+    clip.addEventListener('click', async () => {
+      try {
+        const t = await navigator.clipboard.readText();
+        if (t) area.value = t; else toast('Gli appunti sono vuoti');
+      } catch {
+        toast('Il browser non permette di leggere gli appunti: tieni premuto nel riquadro', 3500);
+      }
+    });
+    q('paste-ok').addEventListener('click', async () => {
+      const text = tidy(area.value);
+      if (!text) { toast('Il riquadro è vuoto'); return; }
+      const s = newScript(titleFrom(text), text);
+      await db.put(s);
+      dlg.close();
+      toast('Script creato');
+      this.onEdit(s);
+    });
+  }
+
+  paste() {
+    if (!this.pasteDlg) this.bindPaste();
+    this.pasteArea.value = '';
+    this.pasteDlg.showModal();
+    this.pasteArea.focus();
   }
 
   async importFiles(files) {

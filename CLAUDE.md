@@ -20,8 +20,10 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   `importers.js` ricuce righe e sillabazione in paragrafi con misure prese su tutto il documento.
   `backup.js`: file .json con script + impostazioni; il ripristino unisce (tiene la versione più recente, non cancella).
   Su iPad l'esportazione passa da `navigator.share` (Salva su File / AirDrop).
-- Per provare in locale con il service worker attivo: è cache-first, quindi dopo una modifica serve
-  togliere la registrazione e svuotare la cache (o cambiare versione).
+- Service worker: cache-first online, ma su localhost/127.0.0.1 prende prima la rete (le modifiche si vedono subito).
+- Su telefono: «Incolla» apre un riquadro dove si tiene premuto e si sceglie Incolla (la lettura automatica degli
+  appunti viene rifiutata da molti browser). Lo schermo intero usa la Fullscreen API: su iPhone Safari non esiste,
+  l'alternativa è l'app aggiunta alla schermata Home. Al primo avvio il carattere vale min(64, lato corto/12) px.
 - Telecomando e secondo schermo: `link.js` (PeerJS 1.5.4 in `web/vendor/peerjs`, broker pubblico 0.peerjs.com + TURN di PeerJS).
   L'iPad è `LinkHost` con id `slimdogs-tp-<codice 6 cifre>` e PIN di 4 cifre (localStorage `tp.linkHost`), attivo
   in tutta l'app quando abilitato. I client (`LinkClient`) mandano `hello` col PIN e ruolo `remote`/`display`.

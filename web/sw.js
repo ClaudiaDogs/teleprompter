@@ -1,6 +1,6 @@
 // Service worker: tiene in cache tutta l'app, così funziona anche offline.
 // VERSION va cambiata a ogni pubblicazione (node tools/bump-version.mjs <versione>).
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const CACHE = 'teleprompter-' + VERSION;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
@@ -22,11 +22,18 @@ self.addEventListener('activate', e => {
     .then(() => self.clients.claim()));
 });
 
+// Sul computer di sviluppo prima la rete (file sempre aggiornati), la cache solo offline.
+const DEV = ['localhost', '127.0.0.1'].includes(location.hostname);
+
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
+    if (DEV) {
+      try { return await fetch(req, { cache: 'no-store' }); }
+      catch { return (await cache.match(req, { ignoreSearch: true })) || new Response('Offline', { status: 503 }); }
+    }
     const hit = await cache.match(req, { ignoreSearch: true })
       || (req.mode === 'navigate' ? await cache.match('index.html') : undefined);
     if (hit) return hit;

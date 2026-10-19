@@ -97,6 +97,13 @@
         <svg viewBox="0 0 24 24"><path d="M3 12h18" stroke-dasharray="2 2.5"/><path d="M7 9l5-6 5 6z"/><path d="M7 15l5 6 5-6z"/></svg></button>
       <button class="op-btn" id="op-settings" data-cmd="settings" title="Impostazioni" aria-label="Impostazioni">
         <svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+      <button class="op-btn op-font" data-cmd="fontSmaller" title="Testo più piccolo (−)" aria-label="Testo più piccolo">
+        <span>A</span><small>−</small></button>
+      <button class="op-btn op-font big" data-cmd="fontBigger" title="Testo più grande (+)" aria-label="Testo più grande">
+        <span>A</span><small>+</small></button>
+      <button class="op-btn" id="op-fullscreen" data-cmd="fullscreen" title="Schermo intero (F)" aria-label="Schermo intero">
+        <svg viewBox="0 0 24 24" class="i-fs"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        <svg viewBox="0 0 24 24" class="i-fs-exit"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
       <span class="op-sep"></span>
       <button class="op-btn" data-cmd="slower" title="Più lento (freccia giù)" aria-label="Più lento">
         <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
@@ -152,6 +159,10 @@
       <button class="rm-btn" data-rc="faster" aria-label="Più veloce">+</button>
     </div>
     <div class="rm-row">
+      <button class="rm-btn wide" data-rc="fontSmaller">Testo A−</button>
+      <button class="rm-btn wide" data-rc="fontBigger">Testo A+</button>
+    </div>
+    <div class="rm-row">
       <button class="rm-btn wide" data-rc="back">‹‹ Indietro</button>
       <button class="rm-btn wide" data-rc="forward">Avanti ››</button>
     </div>
@@ -167,8 +178,25 @@
   </div>
 </section>
 
+<!-- INCOLLA -->
+<dialog id="paste-dialog" class="sheet">
+  <div class="dlg-head">
+    <h2>Incolla un testo</h2>
+    <button id="paste-close" class="op-btn" aria-label="Chiudi">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="dlg-body">
+    <p class="muted small">Tocca il riquadro, tieni premuto e scegli <strong>Incolla</strong>.</p>
+    <textarea id="paste-text" placeholder="Tieni premuto qui e scegli Incolla"></textarea>
+    <div class="cl-actions">
+      <button id="paste-ok" class="btn primary">Crea lo script</button>
+      <button id="paste-clip" class="btn">Leggi dagli appunti</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- COLLEGAMENTO -->
-<dialog id="link-dialog">
+<dialog id="link-dialog" class="sheet">
   <div class="dlg-head">
     <h2>Collegamento</h2>
     <button id="link-close" class="op-btn" aria-label="Chiudi">

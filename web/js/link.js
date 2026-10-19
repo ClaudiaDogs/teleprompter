@@ -1,35 +1,63 @@
-// Collegamento fra dispositivi con PeerJS (WebRTC). Il primo contatto passa dal server pubblico
-// gratuito di PeerJS (serve internet); poi i dati viaggiano diretti fra i dispositivi.
+// Collegamento fra iPad (prompter) e telefoni o secondi schermi, Android e iPhone.
 //
-// Messaggi
-//   client → iPad: {t:'hello', pin, role:'remote'|'display'} · {t:'cmd', c, arg}
-//   iPad → client: {t:'welcome'} · {t:'denied'} · {t:'status', ...} · {t:'library', items}
-//                  {t:'script', id, title, text} · {t:'settings', s}
-import { uid } from './util.js';
+// I messaggi passano da broker MQTT pubblici e gratuiti su WebSocket sicuro (wss): funziona con
+// qualunque rete che porti a internet, anche con iPad in Wi-Fi e telefono in 4G, e con le reti
+// che isolano i dispositivi fra loro. Ogni messaggio è cifrato (AES-GCM) con una chiave ricavata
+// da codice e PIN: senza PIN non si legge e non si comanda niente.
+// L'iPad resta collegato a tutti i broker insieme; il telefono usa il primo che risponde.
+//
+// Messaggi (dentro la cifratura)
+//   telefono → iPad: {t:'hello'|'ping'|'bye', from, role} · {t:'cmd', from, c, arg}
+//   iPad → telefono: {t:'welcome', to} · {t:'status'|'library'|'script'|'settings', to?, for?}
+import { MqttWs } from './mqtt.js';
 
-const PREFIX = 'slimdogs-tp-';
+const BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://test.mosquitto.org:8081/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt',
+];
+const TOPIC = code => `slimdogs-teleprompter/v1/${code}`;
 const HOST_KEY = 'tp.linkHost';
 const CLIENT_KEY = 'tp.linkClient';
-
-let peerjsP;
-function loadPeerJS() {
-  return peerjsP ??= new Promise((resolve, reject) => {
-    if (self.Peer) return resolve(self.Peer);
-    const s = document.createElement('script');
-    s.src = 'vendor/peerjs/peerjs.min.js';
-    s.onload = () => resolve(self.Peer);
-    s.onerror = () => { peerjsP = null; reject(new Error('libreria PeerJS non caricata')); };
-    document.head.append(s);
-  });
-}
+const CLIENT_TIMEOUT = 15000; // un telefono che non si fa sentire per 15 s è considerato uscito
 
 const digits = n => Array.from(crypto.getRandomValues(new Uint32Array(n)), v => v % 10).join('');
+const randomId = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');
 
 function readJSON(key) { try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; } }
 function writeJSON(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
 
 export function clientCreds() { return readJSON(CLIENT_KEY); }
 export function saveClientCreds(c) { writeJSON(CLIENT_KEY, c); }
+
+// ---------- cifratura ----------
+
+const te = new TextEncoder(), td = new TextDecoder();
+
+async function deriveKey(code, pin) {
+  if (!crypto.subtle) throw new Error('serve una pagina https');
+  const base = await crypto.subtle.importKey('raw', te.encode(`${code}:${pin}`), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: te.encode('slimdogs-teleprompter-v1'), iterations: 100000, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+async function seal(key, obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, te.encode(JSON.stringify(obj))));
+  const out = new Uint8Array(12 + ct.length);
+  out.set(iv);
+  out.set(ct, 12);
+  return out;
+}
+
+async function unseal(key, bytes) {
+  if (bytes.length < 29) return null;
+  try {
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.subarray(0, 12) }, key, bytes.subarray(12));
+    return JSON.parse(td.decode(pt));
+  } catch { return null; } // PIN diverso o messaggio altrui
+}
 
 // ---------- iPad (prompter) ----------
 
@@ -38,9 +66,10 @@ export class LinkHost {
     this.onHello = onHello;
     this.onMessage = onMessage;
     this.onChange = onChange;
-    this.clients = new Set();
+    this.clients = new Map(); // id → {id, role, seen, send}
     this.state = 'off'; // off | starting | online | error
     this.error = '';
+    this.brokers = [];
     const c = readJSON(HOST_KEY);
     this.code = c.code || digits(6);
     this.pin = c.pin || digits(4);
@@ -56,11 +85,11 @@ export class LinkHost {
     on ? this.start() : this.stop();
   }
 
-  newPin() {
+  async newPin() {
     this.pin = digits(4);
     this.save();
-    for (const c of this.clients) c.close();
     this.clients.clear();
+    if (this.enabled) { this.stop(); await this.start(); }
     this.changed();
   }
 
@@ -68,104 +97,102 @@ export class LinkHost {
 
   counts() {
     let remote = 0, display = 0;
-    for (const c of this.clients) c.role === 'display' ? display++ : remote++;
+    for (const c of this.clients.values()) c.role === 'display' ? display++ : remote++;
     return { remote, display };
   }
 
+  has(role) {
+    for (const c of this.clients.values()) if (c.role === role) return true;
+    return false;
+  }
+
   async start() {
-    if (!this.enabled || this.peer) return;
+    if (!this.enabled || this.brokers.length) return;
     this.state = 'starting';
     this.error = '';
     this.changed();
-    let Peer;
-    try { Peer = await loadPeerJS(); }
-    catch (err) { this.fail(err.message + ' (sei offline?)'); return; }
-    if (!this.enabled || this.peer) return;
-    const peer = this.peer = new Peer(PREFIX + this.code, { debug: 0 });
-    peer.on('open', () => { this.state = 'online'; this.error = ''; this.changed(); });
-    peer.on('connection', conn => this.accept(conn));
-    peer.on('disconnected', () => {
-      if (this.peer !== peer) return;
-      this.state = 'starting';
-      this.changed();
-      setTimeout(() => { if (this.peer === peer && !peer.destroyed) peer.reconnect(); }, 1500);
+    try { this.key = await deriveKey(this.code, this.pin); }
+    catch (err) { this.state = 'error'; this.error = err.message; this.changed(); return; }
+    if (!this.enabled || this.brokers.length) return;
+    const topic = TOPIC(this.code);
+    this.topicIn = topic + '/c';
+    this.topicOut = topic + '/h';
+    this.brokers = BROKERS.map(url => {
+      const b = new MqttWs(url, {
+        onMessage: (_, bytes) => this.receive(bytes),
+        onState: () => this.updateState(),
+      });
+      b.subscribe(this.topicIn);
+      b.connect();
+      return b;
     });
-    peer.on('error', err => {
-      if (this.peer !== peer) return;
-      // codice ancora registrato dalla sessione precedente, rete assente, server irraggiungibile:
-      // si riprova da capo fra qualche secondo
-      const retry = ['unavailable-id', 'network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type);
-      this.fail(err.type === 'unavailable-id' ? 'codice ancora occupato, riprovo…'
-        : err.type === 'network' || err.type === 'server-error' ? 'nessuna connessione a internet, riprovo…'
-        : 'errore: ' + err.type);
-      if (retry) this.restartSoon();
-    });
+    clearTimeout(this.offlineTimer);
+    this.offlineTimer = setTimeout(() => this.updateState(true), 10000);
+    clearInterval(this.pruneTimer);
+    this.pruneTimer = setInterval(() => this.prune(), 5000);
   }
 
-  fail(msg) {
-    this.state = 'error';
-    this.error = msg;
+  updateState(timeout = false) {
+    if (!this.enabled) return;
+    const up = this.brokers.filter(b => b.up).length;
+    if (up) { this.state = 'online'; this.error = ''; }
+    else if (timeout || this.state === 'online') {
+      this.state = 'error';
+      this.error = 'nessuna connessione a internet, riprovo…';
+    }
     this.changed();
   }
 
-  restartSoon() {
-    const old = this.peer;
-    this.peer = null;
-    try { old?.destroy(); } catch {}
-    clearTimeout(this.retryTimer);
-    this.retryTimer = setTimeout(() => this.start(), 4000);
-  }
-
-  // Al ritorno in primo piano iPadOS può aver chiuso la connessione al server.
   wake() {
     if (!this.enabled) return;
-    if (!this.peer || this.peer.destroyed) this.start();
-    else if (this.peer.disconnected) this.peer.reconnect();
+    if (!this.brokers.length) { this.start(); return; }
+    for (const b of this.brokers) if (!b.up && !b.ws) b.connect();
   }
 
   stop() {
-    clearTimeout(this.retryTimer);
-    for (const c of this.clients) c.close();
+    clearTimeout(this.offlineTimer);
+    clearInterval(this.pruneTimer);
+    for (const b of this.brokers) b.close();
+    this.brokers = [];
     this.clients.clear();
-    try { this.peer?.destroy(); } catch {}
-    this.peer = null;
     this.state = 'off';
     this.changed();
   }
 
-  accept(conn) {
-    let tries = 0;
-    conn.on('data', msg => {
-      if (!conn.ok) {
-        if (msg?.t === 'hello' && String(msg.pin) === this.pin) {
-          conn.ok = true;
-          conn.role = msg.role === 'display' ? 'display' : 'remote';
-          this.clients.add(conn);
-          conn.send({ t: 'welcome' });
-          this.changed();
-          this.onHello?.(conn);
-        } else if (++tries >= 1) {
-          conn.send({ t: 'denied' });
-          setTimeout(() => conn.close(), 400);
-        }
-        return;
-      }
-      this.onMessage?.(msg, conn);
-    });
-    const gone = () => { if (this.clients.delete(conn)) this.changed(); };
-    conn.on('close', gone);
-    conn.on('error', gone);
+  prune() {
+    const now = Date.now();
+    let gone = false;
+    for (const [id, c] of this.clients) if (now - c.seen > CLIENT_TIMEOUT) { this.clients.delete(id); gone = true; }
+    if (gone) this.changed();
   }
 
-  send(msg, role) {
-    for (const c of this.clients) {
-      if ((!role || c.role === role) && c.open) { try { c.send(msg); } catch {} }
+  async receive(bytes) {
+    const msg = await unseal(this.key, bytes);
+    if (!msg || typeof msg.from !== 'string') return;
+    const id = msg.from;
+    if (msg.t === 'bye') { if (this.clients.delete(id)) this.changed(); return; }
+    let conn = this.clients.get(id);
+    if (msg.t === 'hello' || (!conn && msg.t === 'ping')) {
+      const isNew = !conn;
+      conn = conn || { id, send: m => this.send({ ...m, to: id }) };
+      conn.role = msg.role === 'display' ? 'display' : 'remote';
+      conn.seen = Date.now();
+      this.clients.set(id, conn);
+      this.send({ t: 'welcome', to: id });
+      if (isNew) this.changed();
+      this.onHello?.(conn, isNew);
+      return;
     }
+    if (!conn) return;
+    conn.seen = Date.now();
+    if (msg.t === 'cmd') this.onMessage?.(msg, conn);
   }
 
-  has(role) {
-    for (const c of this.clients) if (c.role === role) return true;
-    return false;
+  // role: solo i dispositivi con quel ruolo lo usano; senza ruolo va a tutti
+  async send(msg, role) {
+    if (!this.key || !this.brokers.some(b => b.up)) return;
+    const bytes = await seal(this.key, role ? { ...msg, for: role } : msg);
+    for (const b of this.brokers) b.publish(this.topicOut, bytes);
   }
 
   joinUrl() {
@@ -176,92 +203,102 @@ export class LinkHost {
   }
 }
 
-// ---------- iPhone (telecomando) e secondo schermo ----------
+// ---------- telefono (telecomando) e secondo schermo ----------
 
 export class LinkClient {
   constructor({ code, pin, role, onMessage, onState }) {
     Object.assign(this, { code, pin, role, onMessage, onState });
+    this.id = randomId();
     this.stopped = false;
-    this.state = 'connecting'; // connecting | connected | denied | error
+    this.state = 'connecting'; // connecting | connected | error
+    this.brokerIndex = 0;
   }
 
   set(state, msg = '') {
+    if (state === this.state && msg === this.msg) return;
     this.state = state;
+    this.msg = msg;
     this.onState?.(state, msg);
   }
 
   async start() {
-    let Peer;
-    try { Peer = await loadPeerJS(); }
-    catch (err) { this.set('error', err.message + ' (sei offline?)'); this.retry(); return; }
-    if (this.stopped) return;
     this.set('connecting', 'collegamento in corso…');
-    const peer = this.peer = new Peer(PREFIX + 'c-' + uid().replace(/-/g, '').slice(0, 12), { debug: 0 });
-    peer.on('open', () => this.connect());
-    peer.on('disconnected', () => { if (!this.stopped && !peer.destroyed) setTimeout(() => peer.reconnect(), 1500); });
-    peer.on('error', err => {
-      if (this.stopped) return;
-      if (err.type === 'peer-unavailable') {
-        this.set('error', 'iPad non trovato: il prompter è aperto e il collegamento è attivo? Codice giusto?');
-        this.retry(4000);
-      } else if (['network', 'server-error', 'socket-error', 'socket-closed', 'unavailable-id'].includes(err.type)) {
-        this.set('error', 'nessuna connessione a internet, riprovo…');
-        this.restart();
-      } else {
-        this.set('error', 'errore: ' + err.type);
-        this.retry(4000);
-      }
-    });
+    try { this.key = await deriveKey(this.code, this.pin); }
+    catch (err) { this.set('error', err.message); return; }
+    if (this.stopped) return;
+    this.topicIn = TOPIC(this.code) + '/h';
+    this.topicOut = TOPIC(this.code) + '/c';
+    this.useBroker(0);
+    clearInterval(this.beat);
+    this.beat = setInterval(() => this.heartbeat(), 2500);
   }
 
-  connect() {
-    if (this.stopped || !this.peer || this.peer.destroyed) return;
-    if (this.peer.disconnected) { this.peer.reconnect(); return; }
-    try { this.conn?.close(); } catch {}
-    const conn = this.conn = this.peer.connect(PREFIX + this.code, { reliable: true, serialization: 'json' });
-    conn.on('open', () => conn.send({ t: 'hello', pin: this.pin, role: this.role }));
-    conn.on('data', msg => {
-      if (conn !== this.conn) return;
-      if (msg?.t === 'welcome') this.set('connected');
-      else if (msg?.t === 'denied') { this.set('denied', 'PIN errato'); this.stop(); }
-      else this.onMessage?.(msg);
+  // un broker alla volta; se non risponde si passa al successivo
+  useBroker(i) {
+    this.broker?.close();
+    this.brokerIndex = i % BROKERS.length;
+    this.brokerSince = Date.now();
+    const b = this.broker = new MqttWs(BROKERS[this.brokerIndex], {
+      onMessage: (_, bytes) => this.receive(bytes),
+      onState: () => { if (b === this.broker && b.up) this.hello(); },
     });
-    conn.on('close', () => {
-      if (conn !== this.conn || this.stopped) return;
-      this.set('connecting', 'collegamento perso, riprovo…');
-      this.retry();
-    });
+    b.subscribe(this.topicIn);
+    b.connect();
   }
 
-  retry(ms = 2500) {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      if (this.stopped) return;
-      if (!this.peer || this.peer.destroyed) this.start(); else this.connect();
-    }, ms);
+  heartbeat() {
+    if (this.stopped) return;
+    const now = Date.now();
+    const b = this.broker;
+    if (!b.up) {
+      this.set('error', navigator.onLine === false ? 'il telefono non è connesso a internet' : 'collegamento al server in corso…');
+      if (now - this.brokerSince > 7000) this.useBroker(this.brokerIndex + 1);
+      return;
+    }
+    const silent = now - (this.lastHeard || 0);
+    if (this.state === 'connected' && silent < 8000) { this.post({ t: 'ping', role: this.role }); return; }
+    // nessuna risposta: si ripete il saluto e si spiega perché può non rispondere
+    this.hello();
+    if (now - this.brokerSince > 9000) {
+      this.set('error', 'l\'iPad non risponde: sull\'iPad il collegamento è attivo e la pagina del prompter è aperta? Codice e PIN sono giusti?');
+    }
+    if (silent > 20000 && now - this.brokerSince > 20000) this.useBroker(this.brokerIndex + 1); // magari l'iPad è su un altro server
   }
 
-  restart() {
-    try { this.peer?.destroy(); } catch {}
-    this.peer = null;
-    this.retry(4000);
+  hello() { this.post({ t: 'hello', role: this.role }); }
+
+  async post(msg) {
+    if (!this.key || !this.broker?.up) return false;
+    return this.broker.publish(this.topicOut, await seal(this.key, { ...msg, from: this.id }));
+  }
+
+  async receive(bytes) {
+    const msg = await unseal(this.key, bytes);
+    if (!msg) return;
+    if (msg.to && msg.to !== this.id) return;
+    if (msg.for && msg.for !== this.role) return;
+    this.lastHeard = Date.now();
+    this.brokerSince = Date.now();
+    if (msg.t === 'welcome') { this.set('connected'); return; }
+    if (this.state !== 'connected') this.set('connected');
+    this.onMessage?.(msg);
   }
 
   wake() {
-    if (this.stopped) return;
-    if (this.state !== 'connected' || !this.conn?.open) this.retry(100);
+    if (this.stopped || !this.broker) return;
+    if (!this.broker.up && !this.broker.ws) this.broker.connect();
+    else this.hello();
   }
 
   send(msg) {
-    if (this.conn?.open && this.state === 'connected') { try { this.conn.send(msg); return true; } catch {} }
-    return false;
+    if (this.state !== 'connected' || !this.broker?.up) return false;
+    this.post(msg);
+    return true;
   }
 
   stop() {
     this.stopped = true;
-    clearTimeout(this.timer);
-    try { this.conn?.close(); } catch {}
-    try { this.peer?.destroy(); } catch {}
-    this.peer = null;
+    clearInterval(this.beat);
+    this.post({ t: 'bye' }).finally(() => setTimeout(() => this.broker?.close(), 300));
   }
 }

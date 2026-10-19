@@ -54,14 +54,14 @@ const library = new Library({
 const hostUIs = new Set();
 
 const host = new LinkHost({
-  onHello: conn => {
+  onHello: (conn, isNew) => {
     if (conn.role === 'remote') conn.send({ t: 'library', items: libraryItems(library.scripts) });
     if (conn.role === 'display') {
       conn.send({ t: 'settings', s: settings.get() });
       if (prompter.isOpen && !prompter.follower) sendScript(conn);
     }
     conn.send({ t: 'status', ...prompter.status() });
-    toast(conn.role === 'display' ? 'Secondo schermo collegato' : 'Telecomando collegato');
+    if (isNew) toast(conn.role === 'display' ? 'Secondo schermo collegato' : 'Telecomando collegato');
   },
   onMessage: msg => handleRemoteCommand(msg),
   onChange: () => { hostUIs.forEach(f => f()); updateTicker(); },
@@ -90,18 +90,18 @@ async function handleRemoteCommand(msg) {
   if (!prompter.isOpen || prompter.follower) return;
   if (msg.c === 'close') { prompter.close(); return; }
   prompter.command(msg.c, typeof msg.arg === 'number' ? msg.arg : undefined);
+  host.send({ t: 'status', ...prompter.status() }); // conferma immediata al telefono
 }
 
-// Stato verso i collegati: 20 volte al secondo al secondo schermo, 4 al telecomando.
+// Stato verso i collegati: 10 volte al secondo se c'è un secondo schermo, altrimenti 3.
+// (Il secondo schermo tra un aggiornamento e l'altro prosegue da solo con la velocità ricevuta.)
 let ticker = 0, tick = 0;
 function updateTicker() {
   const need = host.clients.size > 0;
   if (need && !ticker) {
     ticker = setInterval(() => {
-      const st = { t: 'status', ...prompter.status() };
-      if (host.has('display')) host.send(st, 'display');
-      if (tick++ % 5 === 0) host.send(st, 'remote');
-    }, 50);
+      if (host.has('display') || tick++ % 3 === 0) host.send({ t: 'status', ...prompter.status() });
+    }, 100);
   } else if (!need && ticker) {
     clearInterval(ticker);
     ticker = 0;
@@ -134,7 +134,7 @@ function hostBox(root) {
   const share = h('button', 'btn small', 'Invia link all\'iPhone');
   newPin.type = share.type = 'button';
   acts.append(share, newPin);
-  const note = h('p', 'muted small', 'Serve internet su tutti e due i dispositivi. Sull\'iPhone apri il link, oppure apri l\'app, tocca «Collegamento» e scrivi codice e PIN.');
+  const note = h('p', 'muted small', 'Funziona con iPhone e Android, anche su reti diverse (per esempio iPad in Wi-Fi e telefono in 4G): serve solo internet. Sul telefono apri il link, oppure apri il sito, tocca «Collegamento» e scrivi codice e PIN. Tieni aperta questa app sull\'iPad.');
   root.append(row, state, creds, acts, note);
 
   tog.addEventListener('change', () => host.setEnabled(tog.checked));
@@ -237,7 +237,6 @@ function startClient(role) {
     onState: (st, msg) => {
       if (role === 'remote') remoteView.setState(st, msg);
       else setWaitMessage(st, msg);
-      if (st === 'denied') toast('PIN errato', 2500);
     },
   });
   if (role === 'remote') { show('remote'); remoteView.open(client); }
@@ -269,12 +268,15 @@ document.getElementById('link-close').addEventListener('click', () => linkDialog
 document.getElementById('cl-remote').addEventListener('click', () => startClient('remote'));
 document.getElementById('cl-display').addEventListener('click', () => startClient('display'));
 
-// link inviato dall'iPad: …/#collega=123456
-const join = location.hash.match(/collega=(\d{6})/);
-if (join) {
+// link inviato dall'iPad: …/#collega=123456 (anche se la pagina era già aperta)
+function checkJoinLink() {
+  const join = location.hash.match(/collega=(\d{6})/);
+  if (!join) return;
   history.replaceState(null, '', location.pathname + location.search);
-  openLinkDialog(join[1]);
+  if (!linkDialog.open) openLinkDialog(join[1]);
 }
+checkJoinLink();
+addEventListener('hashchange', checkJoinLink);
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;

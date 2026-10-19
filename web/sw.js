@@ -1,13 +1,13 @@
 // Service worker: tiene in cache tutta l'app, così funziona anche offline.
 // VERSION va cambiata a ogni pubblicazione (node tools/bump-version.mjs <versione>).
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const CACHE = 'teleprompter-' + VERSION;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/version.js', 'js/app.js', 'js/util.js', 'js/db.js', 'js/settings.js', 'js/panel.js',
   'js/importers.js', 'js/backup.js', 'js/library.js', 'js/editor.js', 'js/prompter.js',
-  'js/link.js', 'js/remote.js', 'js/voice.js',
-  'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'vendor/peerjs/peerjs.min.js',
+  'js/mqtt.js', 'js/link.js', 'js/remote.js', 'js/voice.js',
+  'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

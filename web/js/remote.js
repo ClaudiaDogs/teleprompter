@@ -67,10 +67,11 @@ export class RemoteView {
   setState(state, msg = '') {
     this.state = state;
     this.stateMsg = msg;
-    const labels = { connected: 'collegato', connecting: 'in collegamento', denied: 'PIN errato', error: 'non collegato' };
+    const labels = { connected: 'collegato', connecting: 'in collegamento', error: 'non collegato' };
     this.el.state.textContent = labels[state] || state;
     this.el.state.dataset.state = state;
     this.el.msg.textContent = state === 'connected' ? '' : msg;
+    this.render();
   }
 
   onMessage(m) {
@@ -87,7 +88,7 @@ export class RemoteView {
     if (list) {
       e.list.replaceChildren(...(this.items.length
         ? this.items.map(it => { const li = h('li', it.id === st.scriptId ? 'on' : null, it.title); li.dataset.id = it.id; return li; })
-        : [h('li', 'empty', 'Nessuno script sull\'iPad.')]));
+        : [h('li', 'empty', this.state === 'connected' ? 'Nessuno script sull\'iPad.' : 'In attesa dell\'iPad…')]));
       return;
     }
     e.play.classList.toggle('playing', st.phase !== 'paused');

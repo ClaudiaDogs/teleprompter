@@ -24,13 +24,15 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
 - Su telefono: «Incolla» apre un riquadro dove si tiene premuto e si sceglie Incolla (la lettura automatica degli
   appunti viene rifiutata da molti browser). Lo schermo intero usa la Fullscreen API: su iPhone Safari non esiste,
   l'alternativa è l'app aggiunta alla schermata Home. Al primo avvio il carattere vale min(64, lato corto/12) px.
-- Telecomando e secondo schermo: `link.js` (PeerJS 1.5.4 in `web/vendor/peerjs`, broker pubblico 0.peerjs.com + TURN di PeerJS).
-  L'iPad è `LinkHost` con id `slimdogs-tp-<codice 6 cifre>` e PIN di 4 cifre (localStorage `tp.linkHost`), attivo
-  in tutta l'app quando abilitato. I client (`LinkClient`) mandano `hello` col PIN e ruolo `remote`/`display`.
-  Lo stato (`prompter.status()`) va al secondo schermo 20 volte/s e al telecomando 4 volte/s; il secondo schermo usa
-  `Prompter.open(script, {follow})`: segue la percentuale con estrapolazione della velocità e riscala il carattere
-  sulla propria larghezza (`cfg()`), con ribaltamenti propri (localStorage `tp.display`). `remote.js` è la vista iPhone.
-  Link d'invito: `…/#collega=<codice>`. Serve internet su tutti i dispositivi.
+- Telecomando e secondo schermo (dalla 0.5.0): `link.js` + `mqtt.js` (client MQTT 3.1.1 minimo su WebSocket).
+  I messaggi passano da broker MQTT pubblici gratuiti (wss://broker.emqx.io:8084, wss://test.mosquitto.org:8081,
+  wss://broker.hivemq.com:8884 — quest'ultimo il 19/10/2026 non rispondeva), argomento
+  `slimdogs-teleprompter/v1/<codice>/h` (iPad → telefoni) e `/c` (telefoni → iPad). Tutto cifrato AES-GCM con chiave
+  PBKDF2(codice:PIN): un PIN sbagliato semplicemente non riceve risposta. L'iPad è collegato a tutti i broker insieme,
+  il telefono al primo che risponde (passa al successivo se tace). Il telefono saluta (`hello`) e manda `ping` ogni 2,5 s;
+  l'iPad lo considera uscito dopo 15 s. Stato al secondo schermo 10 volte/s, altrimenti ~3; dopo ogni comando subito.
+  Prima (0.3–0.4) era PeerJS/WebRTC: non funzionava fra reti diverse o con Wi-Fi che isolano i dispositivi.
+  Il secondo schermo usa `Prompter.open(script, {follow})`. Link d'invito: `…/#collega=<codice>`.
 - Voce (`voice.js`, modalità di scorrimento `voice`): Web Speech API (`webkitSpeechRecognition`), continuo con
   riavvio automatico. `findMatch` allinea le ultime 5 parole sentite (LCS con parole «uguali» = identiche, prefisso
   o una lettera diversa; paroline pesano 0,5) a una finestra di 30 parole avanti (soglia 2) o 150 (soglia 3,5).

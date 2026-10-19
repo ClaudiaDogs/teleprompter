@@ -10,6 +10,10 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   `importers.js` (txt/md/rtf/html), `util.js`, `version.js`.
 - `web/sw.js`: cache di tutta l'app. **A ogni pubblicazione** `node tools/bump-version.mjs X.Y.Z`
   e aggiungere a `ASSETS` ogni file nuovo.
+- **Online: https://claudiadogs.github.io/teleprompter/** — repo `ClaudiaDogs/teleprompter` (pubblico), ramo `main`.
+  Ogni push pubblica `web/` tramite `.github/workflows/pages.yml`. Commit firmati con l'email noreply di GitHub
+  (configurata nel repo). Il primo accesso è stato fatto da Git Credential Manager nel pannello Terminale:
+  se un push dalla shell non interattiva chiede le credenziali, lanciarlo nel Terminale dell'app.
 - Prova in locale: `node tools/serve.mjs` → http://localhost:8080 (configurazione `teleprompter` in `.claude/launch.json`).
 - `prompter.status()` / `onStatus()` / `command(name)` sono gli agganci previsti per telecomando e secondo schermo.
 - Passi: 1 prompter di base ✔ · 2 import PDF (pdf.js in locale) + backup/esportazione · 3 hosting HTTPS (GitHub Pages proposto)

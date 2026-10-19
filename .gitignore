@@ -1,0 +1,6 @@
+# vecchio pacchetto per il Mac (versione Swift)
+*.zip
+.DS_Store
+Thumbs.db
+node_modules/
+.claude/settings.local.json

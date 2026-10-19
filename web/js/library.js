@@ -1,6 +1,9 @@
 import { db, newScript } from './db.js';
 import { h, toast, fmtTime, estimateSeconds, countWords, normalize, tidy, titleFrom } from './util.js';
-import { importFile } from './importers.js';
+import { importFile, fileExt } from './importers.js';
+import { exportBackup, restoreBackup, lastBackup } from './backup.js';
+
+const BACKUP_WARN_DAYS = 14;
 
 const PLAY = '▶︎';
 
@@ -27,6 +30,14 @@ export class Library {
       await this.importFiles([...this.file.files]);
       this.file.value = '';
     });
+    this.backupInfo = q('lib-backup-info');
+    this.restoreFile = q('lib-restore-file');
+    q('lib-backup').addEventListener('click', () => this.backup());
+    q('lib-restore').addEventListener('click', () => this.restoreFile.click());
+    this.restoreFile.addEventListener('change', async () => {
+      await this.importFiles([...this.restoreFile.files]);
+      this.restoreFile.value = '';
+    });
     this.search.addEventListener('input', () => this.render());
     this.list.addEventListener('click', e => this.onClick(e));
 
@@ -49,6 +60,26 @@ export class Library {
     this.list.replaceChildren(...items.map(s => this.item(s)));
     this.empty.hidden = this.scripts.length > 0;
     if (q && !items.length) this.list.append(h('li', 'empty', 'Nessuno script trovato.'));
+    this.renderBackupInfo();
+  }
+
+  renderBackupInfo() {
+    const last = lastBackup();
+    const old = this.scripts.length > 0 && (!last || Date.now() - last > BACKUP_WARN_DAYS * 864e5);
+    this.backupInfo.textContent = last
+      ? 'Ultimo backup: ' + last.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
+      : (this.scripts.length ? 'Nessun backup: gli script sono solo su questo dispositivo' : '');
+    this.backupInfo.classList.toggle('old', old);
+  }
+
+  async backup() {
+    if (!this.scripts.length) { toast('Non ci sono script da salvare'); return; }
+    try {
+      if (await exportBackup(this.scripts)) toast(`Backup di ${this.scripts.length} script pronto`);
+    } catch (err) {
+      alert('Backup non riuscito: ' + err.message);
+    }
+    this.renderBackupInfo();
   }
 
   item(s) {
@@ -114,8 +145,17 @@ export class Library {
   async importFiles(files) {
     let ok = 0;
     const errors = [];
+    const notes = [];
+    if (files.some(f => fileExt(f.name) === 'pdf')) toast('Lettura del PDF…', 4000);
     for (const f of files) {
       try {
+        if (fileExt(f.name) === 'json') {
+          const r = await restoreBackup(f);
+          notes.push(`${f.name}: ${r.added} script aggiunti, ${r.updated} aggiornati, ${r.same} già presenti`
+            + (r.settingsRestored ? ', impostazioni ripristinate' : ''));
+          ok++;
+          continue;
+        }
         const { title, text } = await importFile(f);
         if (!text) throw new Error('file vuoto');
         await db.put(newScript(title, text));
@@ -125,7 +165,10 @@ export class Library {
       }
     }
     await this.refresh();
-    if (errors.length) alert(`Importati ${ok} file su ${files.length}.\n\n${errors.join('\n')}`);
-    else toast(ok === 1 ? 'Script importato' : `Importati ${ok} script`);
+    if (errors.length || notes.length) {
+      alert([errors.length ? `Importati ${ok} file su ${files.length}.` : '', ...notes, ...errors].filter(Boolean).join('\n\n'));
+    } else {
+      toast(ok === 1 ? 'Script importato' : `Importati ${ok} script`);
+    }
   }
 }

@@ -59,7 +59,12 @@ button { cursor: pointer; }
 .empty { color: var(--muted); text-align: center; padding: 40px 20px; list-style: none; }
 .script-list:empty { display: none; }
 #lib-empty { flex: 1; }
-.lib-footer { padding: 8px 20px; font-size: 12px; color: var(--muted); text-align: right; }
+.lib-footer {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 20px;
+  border-top: 1px solid var(--line); font-size: 13px; color: var(--muted);
+}
+#lib-backup-info.old { color: #ff9f0a; }
+#app-version { margin-left: auto; font-size: 12px; }
 
 @media (max-width: 700px) {
   .script-item { flex-direction: column; align-items: stretch; }

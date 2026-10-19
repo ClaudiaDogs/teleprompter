@@ -16,7 +16,13 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   se un push dalla shell non interattiva chiede le credenziali, lanciarlo nel Terminale dell'app.
 - Prova in locale: `node tools/serve.mjs` → http://localhost:8080 (configurazione `teleprompter` in `.claude/launch.json`).
 - `prompter.status()` / `onStatus()` / `command(name)` sono gli agganci previsti per telecomando e secondo schermo.
-- Passi: 1 prompter di base ✔ · 2 import PDF (pdf.js in locale) + backup/esportazione · 3 hosting HTTPS (GitHub Pages proposto)
+- `web/vendor/pdfjs/`: pdfjs-dist 4.10.38 build *legacy* (compatibile con Safari meno recenti), caricato solo all'import di un PDF.
+  `importers.js` ricuce righe e sillabazione in paragrafi con misure prese su tutto il documento.
+  `backup.js`: file .json con script + impostazioni; il ripristino unisce (tiene la versione più recente, non cancella).
+  Su iPad l'esportazione passa da `navigator.share` (Salva su File / AirDrop).
+- Per provare in locale con il service worker attivo: è cache-first, quindi dopo una modifica serve
+  togliere la registrazione e svuotare la cache (o cambiare versione).
+- Passi: 1 prompter di base ✔ · 2 import PDF + backup ✔ · 3 hosting HTTPS su GitHub Pages ✔
   · 4 telecomando iPhone + secondo schermo (PeerJS/WebRTC proposto, PIN) · 5 scorrimento che segue la voce (webkitSpeechRecognition).
 
 ---

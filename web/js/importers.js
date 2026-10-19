@@ -1,11 +1,15 @@
-// Importazione di file di testo: .txt, .md, .rtf, .html. (Il PDF arriva nel passo successivo.)
+// Importazione di file: .txt, .md, .rtf, .html, .pdf.
 import { tidy } from './util.js';
 
+export const fileExt = name => (name.match(/\.([^.]+)$/)?.[1] || '').toLowerCase();
+
 export async function importFile(file) {
-  const ext = (file.name.match(/\.([^.]+)$/)?.[1] || '').toLowerCase();
+  const ext = fileExt(file.name);
   const title = file.name.replace(/\.[^.]+$/, '') || 'Importato';
-  if (ext === 'pdf' || file.type === 'application/pdf') throw new Error('i PDF arrivano nel prossimo aggiornamento');
-  if (ext === 'docx' || ext === 'doc' || ext === 'pages') throw new Error('formato non supportato: salvalo come .rtf o .txt');
+  if (ext === 'docx' || ext === 'doc' || ext === 'pages') throw new Error('formato non supportato: salvalo come PDF, .rtf o .txt');
+  if (ext === 'pdf' || file.type === 'application/pdf') {
+    return { title, text: tidy(await pdfToText(await file.arrayBuffer())) };
+  }
 
   const raw = await readText(file);
   let text;
@@ -123,4 +127,122 @@ export function rtfToText(rtf) {
     emit(nx); i += 2; // \\ \{ \}
   }
   return out;
+}
+
+// ---------- PDF (pdf.js in web/vendor/pdfjs, caricato solo quando serve) ----------
+
+let pdfjsP;
+function loadPdfjs() {
+  return pdfjsP ??= import('../vendor/pdfjs/pdf.min.mjs').then(m => {
+    m.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
+    return m;
+  });
+}
+
+const SENTENCE_END = /[.!?:;…»"”)\]]$/;
+
+// Estrae il testo e ricuce le righe spezzate dall'impaginazione in paragrafi.
+export async function pdfToText(buf) {
+  const pdfjs = await loadPdfjs();
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+  const pages = [];
+  try {
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      pages.push(groupLines((await page.getTextContent()).items));
+      page.cleanup();
+    }
+  } finally {
+    doc.destroy();
+  }
+  // misure dell'impaginazione prese su tutto il documento (una pagina corta non basta)
+  const stats = layoutStats(pages);
+  const paras = [];
+  for (const lines of pages) {
+    const pagePars = linesToParagraphs(lines, stats);
+    // un paragrafo che continua alla pagina successiva
+    if (pagePars.length && paras.length && !SENTENCE_END.test(paras.at(-1)) && /^\p{Ll}/u.test(pagePars[0])) {
+      paras[paras.length - 1] = joinLine(paras.at(-1), pagePars.shift());
+    }
+    paras.push(...pagePars);
+  }
+  const text = paras.join('\n\n');
+  if (!text.trim()) throw new Error('il PDF non contiene testo selezionabile (forse è una scansione)');
+  return text;
+}
+
+// Raggruppa i pezzi di testo in righe usando la posizione verticale.
+function groupLines(items) {
+  const lines = [];
+  let cur = null;
+  for (const it of items) {
+    if (typeof it.str !== 'string') continue;
+    const t = it.transform;
+    const x = t[4], y = t[5];
+    const hgt = it.height || Math.hypot(t[2], t[3]) || 10;
+    if (it.str.trim() === '') {
+      if (cur && it.str) cur.text += ' ';
+      if (it.hasEOL) cur = null;
+      continue;
+    }
+    if (cur && Math.abs(y - cur.y) <= Math.max(2, hgt * 0.4)) {
+      const gap = x - cur.x1;
+      if (gap > hgt * 0.15 && !/\s$/.test(cur.text) && !/^\s/.test(it.str)) cur.text += ' ';
+      cur.text += it.str;
+      cur.x1 = Math.max(cur.x1, x + (it.width || 0));
+    } else {
+      cur = { y, h: hgt, x0: x, x1: x + (it.width || 0), text: it.str };
+      lines.push(cur);
+    }
+    if (it.hasEOL) cur = null;
+  }
+  return lines
+    .map(l => ({ ...l, text: l.text.replace(/\s+/g, ' ').trim() }))
+    .filter(l => l.text && !/^(pag(\.|ina)?\s*)?\d+(\s*(\/|di|of)\s*\d+)?$/i.test(l.text)); // numeri di pagina
+}
+
+// Margine sinistro e destro del testo e distanza normale fra le righe.
+function layoutStats(pages) {
+  const all = pages.flat();
+  if (!all.length) return { minX0: 0, maxX1: 1, width: 1, normalGap: 0 };
+  const x0s = all.map(l => l.x0).sort((a, b) => a - b);
+  const x1s = all.map(l => l.x1).sort((a, b) => a - b);
+  // percentili, così un titolo spostato o una riga anomala non falsano i margini
+  const minX0 = x0s[Math.floor(x0s.length * 0.05)];
+  const maxX1 = x1s[Math.min(x1s.length - 1, Math.floor(x1s.length * 0.9))];
+  const gaps = [];
+  for (const lines of pages) {
+    for (let i = 1; i < lines.length; i++) {
+      const g = lines[i - 1].y - lines[i].y;
+      if (g > 0) gaps.push(g);
+    }
+  }
+  gaps.sort((a, b) => a - b);
+  return { minX0, maxX1, width: Math.max(1, maxX1 - minX0), normalGap: gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0 };
+}
+
+function linesToParagraphs(lines, { minX0, maxX1, width, normalGap }) {
+  if (!lines.length) return [];
+  const paras = [];
+  let cur = lines[0].text;
+  for (let i = 1; i < lines.length; i++) {
+    const prev = lines[i - 1], l = lines[i];
+    const gap = prev.y - l.y;
+    const newPara =
+      gap <= 0 ||                                            // salto di colonna o testo fuori ordine
+      (normalGap && gap > normalGap * 1.45) ||               // spazio in più fra i paragrafi
+      (prev.x1 < maxX1 - width * 0.2 && SENTENCE_END.test(prev.text)) || // riga corta che chiude una frase
+      (l.x0 > minX0 + l.h * 1.2 && l.x0 < minX0 + width * 0.3 && prev.x0 <= minX0 + l.h * 0.5) || // rientro
+      /^[•\-–—*]\s/.test(l.text);                            // elenco puntato
+    if (newPara) { paras.push(cur); cur = l.text; }
+    else cur = joinLine(cur, l.text);
+  }
+  paras.push(cur);
+  return paras;
+}
+
+// Unisce due righe dello stesso paragrafo, togliendo la sillabazione a fine riga.
+function joinLine(a, b) {
+  if (/\p{L}-$/u.test(a) && /^\p{Ll}/u.test(b)) return a.slice(0, -1) + b;
+  return a + ' ' + b;
 }

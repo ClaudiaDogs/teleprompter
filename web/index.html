@@ -26,15 +26,22 @@
     <button id="lib-import" class="btn">Importa file</button>
     <button id="lib-new" class="btn primary">+ Nuovo</button>
     <input id="lib-file" type="file" multiple hidden
-      accept=".txt,.md,.markdown,.rtf,.html,.htm,text/plain,text/markdown,text/html,text/rtf,application/rtf">
+      accept=".txt,.md,.markdown,.rtf,.html,.htm,.pdf,.json,text/plain,text/markdown,text/html,text/rtf,application/rtf,application/pdf,application/json">
+    <input id="lib-restore-file" type="file" hidden accept=".json,application/json">
   </header>
   <div class="searchbar"><input id="lib-search" type="search" placeholder="Cerca negli script" autocomplete="off"></div>
   <ul id="lib-list" class="script-list"></ul>
   <div id="lib-empty" class="empty" hidden>
     <p><strong>Nessuno script.</strong></p>
-    <p>Crea uno script nuovo, incolla un testo dagli appunti o importa dei file (.txt, .md, .rtf, .html).</p>
+    <p>Crea uno script nuovo, incolla un testo dagli appunti o importa dei file (.pdf, .txt, .md, .rtf, .html).</p>
+    <p>Hai un backup? Usa «Ripristina backup» qui sotto.</p>
   </div>
-  <footer class="lib-footer"><span id="app-version"></span></footer>
+  <footer class="lib-footer">
+    <button id="lib-backup" class="btn small">Esporta backup</button>
+    <button id="lib-restore" class="btn small">Ripristina backup</button>
+    <span id="lib-backup-info"></span>
+    <span id="app-version"></span>
+  </footer>
 </section>
 
 <!-- EDITOR -->

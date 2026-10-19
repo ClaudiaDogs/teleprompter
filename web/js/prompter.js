@@ -40,14 +40,20 @@ export class Prompter {
     this.shown = {};
     this.statusSubs = new Set();
     this.lastStatus = 0;
+    this.follower = null;   // secondo schermo: segue un iPad invece di scorrere da solo
+    this.cfgCache = null;
+    this.extraPanel = [];
 
     this.loop = this.loop.bind(this);
     this.onKey = this.onKey.bind(this);
     this.bindStage();
     this.bindBar();
-    this.refreshPanel = buildPanel(this.el.panelBody, this.panelSchema(), settings);
-    settings.subscribe(() => { if (this.isOpen) { this.applyStyle(); this.refreshPanel(); } });
-    new ResizeObserver(() => { if (this.isOpen) { this.layout(); this.render(true); } }).observe(this.el.clip);
+    this.refreshPanel = () => {};
+    settings.subscribe(() => { if (this.isOpen && !this.follower) { this.applyStyle(); this.refreshPanel(); } });
+    new ResizeObserver(() => {
+      this.cfgCache = null;
+      if (this.isOpen) { this.layout(); this.render(true); }
+    }).observe(this.el.clip);
     document.addEventListener('visibilitychange', () => {
       if (this.isOpen && document.visibilityState === 'visible') this.lockScreen();
     });
@@ -55,7 +61,17 @@ export class Prompter {
 
   // ---------- apertura e chiusura ----------
 
-  open(script) {
+  // Sezioni del pannello aggiunte da fuori (per esempio il collegamento con iPhone e secondo schermo).
+  addPanelSection(section) { this.extraPanel.push(section); }
+
+  open(script, { follow = null } = {}) {
+    if (!this.panelBuilt) {
+      this.panelBuilt = true;
+      this.refreshPanel = buildPanel(this.el.panelBody, [...this.panelSchema(), ...this.extraPanel], settings);
+    }
+    this.follower = follow;
+    this.cfgCache = null;
+    this.el.view.classList.toggle('follower', !!follow);
     this.script = script;
     this.renderText(script.text);
     this.isOpen = true;
@@ -81,6 +97,9 @@ export class Prompter {
   close() {
     this.pause();
     this.isOpen = false;
+    this.follower = null;
+    this.cfgCache = null;
+    this.emitStatus();
     cancelAnimationFrame(this.raf);
     clearTimeout(this.barTimer);
     document.removeEventListener('keydown', this.onKey);
@@ -102,8 +121,48 @@ export class Prompter {
 
   // ---------- aspetto e misure ----------
 
+  // Impostazioni in uso: le proprie oppure, sul secondo schermo, quelle dell'iPad riscalate
+  // sulla larghezza di questo schermo (così le righe vanno a capo negli stessi punti).
+  cfg() {
+    const f = this.follower;
+    if (!f) return settings.get();
+    if (this.cfgCache) return this.cfgCache;
+    const hs = f.settings || settings.get();
+    const k = f.hostW > 0 ? this.el.stage.clientWidth / f.hostW : 1;
+    return this.cfgCache = { ...hs, fontSize: hs.fontSize * k, timerSize: hs.timerSize * k, flipH: f.flipH, flipV: f.flipV };
+  }
+
+  // Secondo schermo: nuove impostazioni o nuova posizione dall'iPad.
+  updateFollow({ settings: hs, status } = {}) {
+    const f = this.follower;
+    if (!f) return;
+    let restyle = false;
+    if (hs) { f.settings = hs; restyle = true; }
+    if (status) {
+      f.status = status;
+      f.at = performance.now();
+      if (status.stageW && status.stageW !== f.hostW) { f.hostW = status.stageW; restyle = true; }
+    }
+    if (restyle && this.isOpen) { this.cfgCache = null; this.applyStyle(); }
+  }
+
+  followStep(dt) {
+    const f = this.follower, st = f.status;
+    if (!st) return;
+    const age = (performance.now() - f.at) / 1000;
+    const playing = st.phase === 'playing';
+    const v = playing ? st.velocity * this.maxOffset : 0;
+    const target = clamp(st.progress * this.maxOffset + v * age, 0, this.maxOffset);
+    const diff = target - this.offset;
+    // salti grandi (ricomincia, avanti, barra) subito; il resto con avanzamento continuo e piccola correzione
+    this.offset = Math.abs(diff) > this.linePx * 4 ? target : clamp(this.offset + v * dt + diff * Math.min(1, dt * 4), 0, this.maxOffset);
+    this.phase = st.phase;
+    this.elapsed = st.elapsed + (playing ? age : 0);
+    this.countLeft = st.countLeft - (st.phase === 'countdown' ? age : 0);
+  }
+
   applyStyle() {
-    const s = settings.get(), e = this.el;
+    const s = this.cfg(), e = this.el;
     e.mirror.style.transform = `scale(${s.flipH ? -1 : 1}, ${s.flipV ? -1 : 1})`;
     Object.assign(e.viewport.style, {
       left: s.marginLeft + '%', right: s.marginRight + '%', top: s.marginTop + '%', bottom: s.marginBottom + '%',
@@ -135,7 +194,7 @@ export class Prompter {
 
   // Ricalcola le misure mantenendo il punto di lettura (in percentuale).
   layout() {
-    const s = settings.get();
+    const s = this.cfg();
     const vpH = this.el.clip.clientHeight;
     const progress = this.maxOffset > 0 ? this.offset / this.maxOffset : 0;
     this.linePx = s.fontSize * s.lineHeight;
@@ -152,6 +211,8 @@ export class Prompter {
     this.raf = requestAnimationFrame(this.loop);
     const dt = clamp((now - this.last) / 1000, 0, 0.1);
     this.last = now;
+
+    if (this.follower) { this.followStep(dt); this.render(); return; }
 
     if (this.phase === 'countdown') {
       this.countLeft -= dt;
@@ -174,11 +235,11 @@ export class Prompter {
       }
     }
     this.render();
-    if (now - this.lastStatus > 250) { this.lastStatus = now; this.emitStatus(); }
+    if (now - this.lastStatus > 50) { this.lastStatus = now; this.emitStatus(); }
   }
 
   pxPerSec() {
-    const s = settings.get();
+    const s = this.cfg();
     if (s.scrollMode === 'duration') {
       const left = Math.max(0.5, this.runDuration - this.elapsed);
       return Math.max(0, this.maxOffset - this.offset) / left;
@@ -187,14 +248,19 @@ export class Prompter {
   }
 
   remaining() {
-    const s = settings.get();
+    const f = this.follower;
+    if (f) {
+      if (!f.status) return 0;
+      return f.status.remaining - (f.status.phase === 'playing' ? (performance.now() - f.at) / 1000 : 0);
+    }
+    const s = this.cfg();
     if (s.scrollMode === 'duration') return this.runDuration - this.elapsed;
     const v = (s.speed / 60) * this.linePx;
     return v > 0 ? Math.max(0, this.maxOffset - this.offset) / v : 0;
   }
 
   render(force = false) {
-    const e = this.el, s = settings.get(), sh = this.shown;
+    const e = this.el, s = this.cfg(), sh = this.shown;
     const dpr = window.devicePixelRatio || 1;
     const y = Math.round((this.padTop - this.offset) * dpr) / dpr;
     if (force || y !== sh.y) { sh.y = y; e.text.style.transform = `translate3d(0,${y}px,0)`; }
@@ -233,7 +299,18 @@ export class Prompter {
   // ---------- comandi ----------
 
   command(name, arg) {
-    const s = settings.get();
+    const s = this.cfg();
+    if (this.follower) {
+      // il secondo schermo ha solo ribaltamenti propri e chiusura
+      if (name === 'flipH' || name === 'flipV') {
+        this.follower[name] = !this.follower[name];
+        this.follower.onFlip?.(this.follower);
+        this.cfgCache = null;
+        this.applyStyle();
+      } else if (name === 'close') { this.close(); return; }
+      this.showBar();
+      return;
+    }
     switch (name) {
       case 'toggle': this.toggle(); break;
       case 'play': if (this.phase === 'paused') this.play(); break;
@@ -260,7 +337,7 @@ export class Prompter {
       this.elapsed = 0;
       this.runDuration = this.scriptDuration();
     }
-    const s = settings.get();
+    const s = this.cfg();
     if (s.countdown > 0 && (this.elapsed === 0 || s.countdownOnResume)) {
       this.countLeft = s.countdown;
       this.setPhase('countdown');
@@ -287,11 +364,12 @@ export class Prompter {
     this.elapsed = 0;
     this.runDuration = this.scriptDuration();
     this.render(true);
+    this.emitStatus();
     toast('Dall\'inizio');
   }
 
   jump(dir) {
-    const s = settings.get();
+    const s = this.cfg();
     const from = this.offset;
     const base = this.anim ? this.anim.to : this.offset;
     const to = clamp(base + dir * s.jumpLines * this.linePx, 0, this.maxOffset);
@@ -302,10 +380,11 @@ export class Prompter {
     this.anim = null;
     this.offset = clamp(frac, 0, 1) * this.maxOffset;
     this.render(true);
+    this.emitStatus();
   }
 
   adjustSpeed(dir) {
-    const s = settings.get();
+    const s = this.cfg();
     if (s.scrollMode === 'duration') {
       // In modalità durata, + e − accorciano o allungano la lettura in corso di 5 s (non si salva).
       this.runDuration = Math.max(Math.ceil(this.elapsed) + 5, this.runDuration - dir * 5);
@@ -388,6 +467,7 @@ export class Prompter {
     const st = this.el.stage;
     st.addEventListener('pointerdown', e => {
       if (e.button > 0 || this.ptr) return;
+      if (this.follower) { this.showBar(); return; }
       const handle = e.target.closest('[data-drag]');
       this.ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, kind: handle ? handle.dataset.drag : 'text',
         moved: !!handle, start: this.offset };
@@ -396,7 +476,7 @@ export class Prompter {
     st.addEventListener('pointermove', e => {
       const p = this.ptr;
       if (!p || p.id !== e.pointerId) { if (e.pointerType === 'mouse') this.showBar(); return; }
-      const s = settings.get();
+      const s = this.cfg();
       if (p.kind === 'text') {
         if (!p.moved) {
           if (Math.abs(e.clientY - p.y) < DRAG_THRESHOLD && Math.abs(e.clientX - p.x) < DRAG_THRESHOLD) return;
@@ -434,8 +514,9 @@ export class Prompter {
     // rotellina del mouse (computer)
     st.addEventListener('wheel', e => {
       e.preventDefault();
+      if (this.follower) return;
       this.anim = null;
-      const dir = settings.get().flipV ? -1 : 1;
+      const dir = this.cfg().flipV ? -1 : 1;
       this.offset = clamp(this.offset + e.deltaY * dir, 0, this.maxOffset);
       this.render();
     }, { passive: false });
@@ -554,15 +635,21 @@ export class Prompter {
     this.wake = null;
   }
 
-  // ---------- stato per telecomando e secondo schermo (passi successivi) ----------
+  // ---------- stato per telecomando e secondo schermo ----------
 
   onStatus(fn) { this.statusSubs.add(fn); return () => this.statusSubs.delete(fn); }
 
   status() {
+    if (!this.isOpen || this.follower) return { open: false };
+    const s = this.cfg();
+    const moving = this.phase === 'playing' && !this.dragging && !this.anim && this.maxOffset > 0;
     return {
-      title: this.script?.title, phase: this.phase,
+      open: true, scriptId: this.script.id, title: this.script.title, phase: this.phase,
       progress: this.maxOffset > 0 ? this.offset / this.maxOffset : 0,
-      elapsed: this.elapsed, remaining: this.remaining(),
+      velocity: moving ? this.pxPerSec() / this.maxOffset : 0, // frazione di script al secondo
+      elapsed: this.elapsed, remaining: this.remaining(), countLeft: this.countLeft,
+      speedLabel: s.scrollMode === 'duration' ? 'durata ' + fmtTime(this.runDuration) : s.speed + ' righe/min',
+      flipH: s.flipH, flipV: s.flipV, stageW: this.el.stage.clientWidth,
     };
   }
 

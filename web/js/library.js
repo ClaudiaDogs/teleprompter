@@ -8,9 +8,10 @@ const BACKUP_WARN_DAYS = 14;
 const PLAY = '▶︎';
 
 export class Library {
-  constructor({ onEdit, onRead }) {
+  constructor({ onEdit, onRead, onChange }) {
     this.onEdit = onEdit;
     this.onRead = onRead;
+    this.onChange = onChange;
     this.scripts = [];
     const q = id => document.getElementById(id);
     this.view = q('view-library');
@@ -52,6 +53,7 @@ export class Library {
   async refresh() {
     this.scripts = (await db.all()).sort((a, b) => b.updatedAt - a.updatedAt);
     this.render();
+    this.onChange?.(this.scripts);
   }
 
   render() {

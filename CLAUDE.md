@@ -22,6 +22,14 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   Su iPad l'esportazione passa da `navigator.share` (Salva su File / AirDrop).
 - Per provare in locale con il service worker attivo: è cache-first, quindi dopo una modifica serve
   togliere la registrazione e svuotare la cache (o cambiare versione).
+- Telecomando e secondo schermo: `link.js` (PeerJS 1.5.4 in `web/vendor/peerjs`, broker pubblico 0.peerjs.com + TURN di PeerJS).
+  L'iPad è `LinkHost` con id `slimdogs-tp-<codice 6 cifre>` e PIN di 4 cifre (localStorage `tp.linkHost`), attivo
+  in tutta l'app quando abilitato. I client (`LinkClient`) mandano `hello` col PIN e ruolo `remote`/`display`.
+  Lo stato (`prompter.status()`) va al secondo schermo 20 volte/s e al telecomando 4 volte/s; il secondo schermo usa
+  `Prompter.open(script, {follow})`: segue la percentuale con estrapolazione della velocità e riscala il carattere
+  sulla propria larghezza (`cfg()`), con ribaltamenti propri (localStorage `tp.display`). `remote.js` è la vista iPhone.
+  Link d'invito: `…/#collega=<codice>`. Serve internet su tutti i dispositivi.
+- Prova di collegamento in locale: iPad su http://localhost:8080 e client su http://127.0.0.1:8080 (memorie separate).
 - Passi: 1 prompter di base ✔ · 2 import PDF + backup ✔ · 3 hosting HTTPS su GitHub Pages ✔
   · 4 telecomando iPhone + secondo schermo (PeerJS/WebRTC proposto, PIN) · 5 scorrimento che segue la voce (webkitSpeechRecognition).
 

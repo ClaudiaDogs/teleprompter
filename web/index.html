@@ -22,6 +22,7 @@
 <section id="view-library" class="view">
   <header class="topbar">
     <h1>Teleprompter</h1>
+    <button id="lib-link" class="btn"><span class="link-dot"></span>Collegamento</button>
     <button id="lib-paste" class="btn">Incolla</button>
     <button id="lib-import" class="btn">Importa file</button>
     <button id="lib-new" class="btn primary">+ Nuovo</button>
@@ -106,7 +107,13 @@
         <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
         <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
       <span id="op-time"></span>
+      <span id="op-link" hidden></span>
     </div>
+  </div>
+
+  <div id="follow-wait">
+    <p id="follow-wait-title">In attesa del prompter…</p>
+    <p id="follow-wait-msg"></p>
   </div>
 
   <aside id="panel" data-side="right" hidden>
@@ -119,6 +126,73 @@
     <div id="panel-body"></div>
   </aside>
 </section>
+
+<!-- TELECOMANDO (iPhone) -->
+<section id="view-remote" class="view" hidden>
+  <header class="topbar">
+    <button id="rm-exit" class="btn">‹ Esci</button>
+    <h1 id="rm-title">Telecomando</h1>
+    <span id="rm-state" class="link-state"></span>
+  </header>
+  <div id="rm-msg" class="rm-msg"></div>
+  <div id="rm-library" class="rm-library" hidden>
+    <p class="muted">Scegli lo script da aprire sul prompter:</p>
+    <ul id="rm-list" class="rm-list"></ul>
+  </div>
+  <div id="rm-main" class="rm-main" hidden>
+    <div class="rm-times"><span id="rm-elapsed">00:00</span><span id="rm-remaining">−00:00</span></div>
+    <input id="rm-progress" type="range" min="0" max="1000" step="1" value="0" aria-label="Avanzamento">
+    <button id="rm-play" class="rm-play" data-rc="toggle" aria-label="Play / pausa">
+      <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
+      <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+    </button>
+    <div class="rm-row">
+      <button class="rm-btn" data-rc="slower" aria-label="Più lento">−</button>
+      <span id="rm-speed" class="rm-speed"></span>
+      <button class="rm-btn" data-rc="faster" aria-label="Più veloce">+</button>
+    </div>
+    <div class="rm-row">
+      <button class="rm-btn wide" data-rc="back">‹‹ Indietro</button>
+      <button class="rm-btn wide" data-rc="forward">Avanti ››</button>
+    </div>
+    <div class="rm-row">
+      <button class="rm-btn wide" data-rc="restart">Dall'inizio</button>
+      <button class="rm-btn" id="rm-flipH" data-rc="flipH" aria-label="Ribalta orizzontale">⇋&#xFE0E;</button>
+      <button class="rm-btn" id="rm-flipV" data-rc="flipV" aria-label="Ribalta verticale">⇅&#xFE0E;</button>
+    </div>
+    <div class="rm-row">
+      <button class="rm-btn wide" id="rm-scripts">Cambia script</button>
+      <button class="rm-btn wide danger" data-rc="close">Chiudi script</button>
+    </div>
+  </div>
+</section>
+
+<!-- COLLEGAMENTO -->
+<dialog id="link-dialog">
+  <div class="dlg-head">
+    <h2>Collegamento</h2>
+    <button id="link-close" class="op-btn" aria-label="Chiudi">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="dlg-body">
+    <section class="dlg-sec">
+      <h3>Questo dispositivo è il prompter</h3>
+      <div id="host-box-lib"></div>
+    </section>
+    <section class="dlg-sec">
+      <h3>Collegati a un prompter</h3>
+      <p class="muted small">Su iPhone o su un secondo dispositivo: scrivi codice e PIN che vedi sull'iPad.</p>
+      <div class="cl-fields">
+        <label>Codice <input id="cl-code" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="000000"></label>
+        <label>PIN <input id="cl-pin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0000"></label>
+      </div>
+      <div class="cl-actions">
+        <button id="cl-remote" class="btn primary">Usa come telecomando</button>
+        <button id="cl-display" class="btn">Usa come secondo schermo</button>
+      </div>
+    </section>
+  </div>
+</dialog>
 
 <div id="toast" role="status"></div>
 </body>

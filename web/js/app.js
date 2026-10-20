@@ -31,7 +31,7 @@ async function openPrompter(script) {
   if (current === 'editor') await editor.flush();
   show('prompter');
   prompter.open(script);
-  if (host.has('display')) sendScript();
+  if (host.clients.size) sendScript();
 }
 
 const prompter = new Prompter({
@@ -56,10 +56,9 @@ const hostUIs = new Set();
 const host = new LinkHost({
   onHello: (conn, isNew) => {
     if (conn.role === 'remote') conn.send({ t: 'library', items: libraryItems(library.scripts) });
-    if (conn.role === 'display') {
-      conn.send({ t: 'settings', s: settings.get() });
-      if (prompter.isOpen && !prompter.follower) sendScript(conn);
-    }
+    if (conn.role === 'display') conn.send({ t: 'settings', s: settings.get() });
+    // il testo va anche al telecomando, che lo mostra in anteprima mentre scorre
+    if (prompter.isOpen && !prompter.follower) sendScript(conn);
     conn.send({ t: 'status', ...prompter.status() });
     if (isNew) toast(conn.role === 'display' ? 'Secondo schermo collegato' : 'Telecomando collegato');
   },
@@ -74,7 +73,7 @@ function libraryItems(scripts) {
 function sendScript(conn) {
   const s = prompter.script;
   const msg = { t: 'script', id: s.id, title: s.title, text: s.text };
-  conn ? conn.send(msg) : host.send(msg, 'display');
+  conn ? conn.send(msg) : host.send(msg);
 }
 
 async function handleRemoteCommand(msg) {

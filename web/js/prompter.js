@@ -837,7 +837,7 @@ export class Prompter {
       velocity: moving ? this.pxPerSec() / this.maxOffset : 0, // frazione di script al secondo
       elapsed: this.elapsed, remaining: this.remaining(), countLeft: this.countLeft,
       speedLabel: this.speedLabel(),
-      flipH: s.flipH, flipV: s.flipV, stageW: this.el.stage.clientWidth,
+      flipH: s.flipH, flipV: s.flipV, stageW: this.el.stage.clientWidth, guidePos: s.guidePos,
     };
   }
 

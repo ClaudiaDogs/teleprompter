@@ -147,6 +147,15 @@
     <ul id="rm-list" class="rm-list"></ul>
   </div>
   <div id="rm-main" class="rm-main" hidden>
+    <div id="rm-preview" class="rm-preview">
+      <div id="rm-ptext" class="rm-ptext"></div>
+      <div id="rm-pguide" class="rm-pguide"></div>
+      <div id="rm-pwait" class="rm-pwait">Arriva il testo…</div>
+      <div class="rm-pfont">
+        <button class="rm-pbtn" id="rm-psmaller" aria-label="Anteprima più piccola">a</button>
+        <button class="rm-pbtn" id="rm-pbigger" aria-label="Anteprima più grande">A</button>
+      </div>
+    </div>
     <div class="rm-times"><span id="rm-elapsed">00:00</span><span id="rm-remaining">−00:00</span></div>
     <input id="rm-progress" type="range" min="0" max="1000" step="1" value="0" aria-label="Avanzamento">
     <button id="rm-play" class="rm-play" data-rc="toggle" aria-label="Play / pausa">

@@ -324,3 +324,37 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, .6); }
   #app-version { flex-basis: 100%; text-align: right; }
   .cl-fields input { width: 8ch; font-size: 22px; }
 }
+
+/* anteprima del testo sul telecomando */
+.rm-preview {
+  position: relative; flex: 0 0 auto; height: 40vh; min-height: 200px; overflow: hidden;
+  background: #000; border: 1px solid var(--line); border-radius: 14px; margin: 0 -6px;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.rm-ptext {
+  position: absolute; left: 0; right: 0; top: 0; padding: 0 16px; will-change: transform;
+  white-space: pre-wrap; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto;
+  color: #fff; font-size: 22px; line-height: 1.35;
+}
+.rm-ptext p { margin: 0; }
+.rm-pguide { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; }
+.rm-pguide::before, .rm-pguide::after {
+  content: ""; position: absolute; top: -8px; border-top: 8px solid transparent; border-bottom: 8px solid transparent;
+}
+.rm-pguide::before { left: 2px; border-left: 10px solid var(--accent); }
+.rm-pguide::after { right: 2px; border-right: 10px solid var(--accent); }
+.rm-pwait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 15px; }
+.rm-pfont { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 6px; }
+.rm-pbtn {
+  width: 36px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: rgba(31, 31, 37, .85);
+  font-weight: 700; font-size: 15px; padding: 0;
+}
+#rm-pbigger { font-size: 19px; }
+.rm-main .rm-play { width: 96px; height: 96px; margin: 0; }
+.rm-main .rm-play svg { width: 44px; height: 44px; }
+.rm-main { gap: 10px; }
+.rm-main .rm-times { font-size: 24px; }
+#view-remote .topbar { flex-wrap: nowrap; padding: 10px 14px; }
+#view-remote .topbar h1 { flex: 1 1 auto; flex-basis: auto; }
+#view-remote .topbar .btn { flex: 0 0 auto; }
+.rm-main > * { flex-shrink: 0; }

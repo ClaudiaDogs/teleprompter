@@ -33,6 +33,11 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   l'iPad lo considera uscito dopo 15 s. Stato al secondo schermo 10 volte/s, altrimenti ~3; dopo ogni comando subito.
   Prima (0.3–0.4) era PeerJS/WebRTC: non funzionava fra reti diverse o con Wi-Fi che isolano i dispositivi.
   Il secondo schermo usa `Prompter.open(script, {follow})`. Link d'invito: `…/#collega=<codice>`.
+  Dalla 0.5.1 lo script va anche al telecomando, che mostra un'anteprima che scorre (`remote.js`, stessa
+  estrapolazione del secondo schermo, guida a `guidePos` dell'iPad, carattere proprio in `tp.remoteFont`);
+  trascinare l'anteprima sposta l'iPad, toccarla è play/pausa.
+- Verifica della sintassi: `node --check` non ha segnalato un a capo dentro una stringa in `remote.js`;
+  controllare caricando il modulo nel browser (`await import('/js/x.js?x=' + Date.now())`).
 - Voce (`voice.js`, modalità di scorrimento `voice`): Web Speech API (`webkitSpeechRecognition`), continuo con
   riavvio automatico. `findMatch` allinea le ultime 5 parole sentite (LCS con parole «uguali» = identiche, prefisso
   o una lettera diversa; paroline pesano 0,5) a una finestra di 30 parole avanti (soglia 2) o 150 (soglia 3,5).

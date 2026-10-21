@@ -95,6 +95,13 @@ export class LinkHost {
 
   changed() { this.onChange?.(this); }
 
+  // dispositivi collegati con una versione diversa dell'app
+  outdated() {
+    let n = 0;
+    for (const c of this.clients.values()) if (c.v !== self.APP_VERSION) n++;
+    return n;
+  }
+
   counts() {
     let remote = 0, display = 0;
     for (const c of this.clients.values()) c.role === 'display' ? display++ : remote++;
@@ -176,9 +183,10 @@ export class LinkHost {
       const isNew = !conn;
       conn = conn || { id, send: m => this.send({ ...m, to: id }) };
       conn.role = msg.role === 'display' ? 'display' : 'remote';
+      conn.v = typeof msg.v === 'string' ? msg.v : '';
       conn.seen = Date.now();
       this.clients.set(id, conn);
-      this.send({ t: 'welcome', to: id });
+      this.send({ t: 'welcome', to: id, v: self.APP_VERSION });
       if (isNew) this.changed();
       this.onHello?.(conn, isNew);
       return;
@@ -206,8 +214,8 @@ export class LinkHost {
 // ---------- telefono (telecomando) e secondo schermo ----------
 
 export class LinkClient {
-  constructor({ code, pin, role, onMessage, onState }) {
-    Object.assign(this, { code, pin, role, onMessage, onState });
+  constructor({ code, pin, role, onMessage, onState, onVersion }) {
+    Object.assign(this, { code, pin, role, onMessage, onState, onVersion });
     this.id = randomId();
     this.stopped = false;
     this.state = 'connecting'; // connecting | connected | error
@@ -225,6 +233,7 @@ export class LinkClient {
     this.set('connecting', 'collegamento in corso…');
     try { this.key = await deriveKey(this.code, this.pin); }
     catch (err) { this.set('error', err.message); return; }
+    this.byeBytes = await seal(this.key, { t: 'bye', from: this.id });
     if (this.stopped) return;
     this.topicIn = TOPIC(this.code) + '/h';
     this.topicOut = TOPIC(this.code) + '/c';
@@ -265,7 +274,7 @@ export class LinkClient {
     if (silent > 20000 && now - this.brokerSince > 20000) this.useBroker(this.brokerIndex + 1); // magari l'iPad è su un altro server
   }
 
-  hello() { this.post({ t: 'hello', role: this.role }); }
+  hello() { this.post({ t: 'hello', role: this.role, v: self.APP_VERSION }); }
 
   async post(msg) {
     if (!this.key || !this.broker?.up) return false;
@@ -279,7 +288,7 @@ export class LinkClient {
     if (msg.for && msg.for !== this.role) return;
     this.lastHeard = Date.now();
     this.brokerSince = Date.now();
-    if (msg.t === 'welcome') { this.set('connected'); return; }
+    if (msg.t === 'welcome') { this.set('connected'); this.onVersion?.(msg.v || ''); return; }
     if (this.state !== 'connected') this.set('connected');
     this.onMessage?.(msg);
   }
@@ -297,8 +306,11 @@ export class LinkClient {
   }
 
   stop() {
+    if (this.stopped) return;
     this.stopped = true;
     clearInterval(this.beat);
-    this.post({ t: 'bye' }).finally(() => setTimeout(() => this.broker?.close(), 300));
+    // saluto già cifrato: si spedisce subito, anche se la pagina si sta chiudendo
+    if (this.byeBytes && this.broker?.up) this.broker.publish(this.topicOut, this.byeBytes);
+    setTimeout(() => this.broker?.close(), 300);
   }
 }

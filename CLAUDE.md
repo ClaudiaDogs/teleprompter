@@ -41,7 +41,17 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   Dalla 0.6.0 il telefono modifica tutte le impostazioni del prompter: `settings-schema.js` è l'elenco unico
   (iPad e telefono), `panel.js` lo disegna con uno «store» che sul telefono manda `cmd settings` (al massimo
   ogni 80 ms, l'iPad accetta solo chiavi di DEFAULTS col tipo giusto), `resetSettings` e `duration`
-  (durata dello script aperto, `Prompter.setScriptDuration`). Le modifiche locali vincono sull'eco per 800 ms.
+  (durata dello script aperto, `Prompter.setScriptDuration`).
+- Dalla 0.6.1 (affidabilità):
+  * I broker pubblici sono QoS 0: un messaggio può perdersi. L'iPad rimanda le impostazioni ogni 2 s; telefono e
+    secondo schermo, se non hanno impostazioni o lo script giusto, risalutano (`hello`) e l'iPad rimanda tutto;
+    il telefono tiene le proprie modifiche in `pending` finché l'iPad non le conferma e le rimanda dopo 1,5 s.
+  * `hello`/`welcome` portano la versione dell'app: se diverse, avviso chiaro su entrambi i lati.
+  * Aggiornamenti: `reg.update()` all'avvio, al ritorno in primo piano e ogni 15 min. Telefono e secondo schermo
+    ricaricano subito e si ricollegano da soli (`sessionStorage` `tp.resume`); l'iPad aspetta la libreria.
+    Causa del problema del 21/10: dispositivi rimasti su versioni vecchie.
+  * Il secondo schermo segue anche lo specchio dell'iPad (non ha più ribaltamenti propri): richiesta dell'utente.
+  * Chiudendo la pagina il client manda subito un `bye` già cifrato (`byeBytes`).
 - Verifica della sintassi: `node --check` non ha segnalato un a capo dentro una stringa in `remote.js`;
   controllare caricando il modulo nel browser (`await import('/js/x.js?x=' + Date.now())`).
 - Voce (`voice.js`, modalità di scorrimento `voice`): Web Speech API (`webkitSpeechRecognition`), continuo con

@@ -1,6 +1,6 @@
 // Service worker: tiene in cache tutta l'app, così funziona anche offline.
 // VERSION va cambiata a ogni pubblicazione (node tools/bump-version.mjs <versione>).
-const VERSION = '0.6.0';
+const VERSION = '0.6.1';
 const CACHE = 'teleprompter-' + VERSION;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',

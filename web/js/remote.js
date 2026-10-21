@@ -41,7 +41,9 @@ export class RemoteView {
     q('rm-settings-open').addEventListener('click', () => this.openSettings(true));
     q('rm-settings-done').addEventListener('click', () => this.openSettings(false));
     q('rm-settings-reset').addEventListener('click', () => {
-      if (confirm('Ripristinare tutte le impostazioni predefinite del prompter?')) this.send('resetSettings');
+      if (!confirm('Ripristinare tutte le impostazioni predefinite del prompter?')) return;
+      this.pending = {};
+      this.send('resetSettings');
     });
 
     q('rm-exit').addEventListener('click', () => this.onExit());
@@ -94,10 +96,10 @@ export class RemoteView {
     if (!this.client?.send({ t: 'cmd', c, arg })) this.flash('Non collegato');
   }
 
-  flash(text) {
+  flash(text, ms = 1500) {
     this.el.msg.textContent = text;
     clearTimeout(this.flashTimer);
-    this.flashTimer = setTimeout(() => this.setState(this.state, this.stateMsg), 1500);
+    this.flashTimer = setTimeout(() => this.setState(this.state, this.stateMsg), ms);
   }
 
   setState(state, msg = '') {
@@ -113,10 +115,15 @@ export class RemoteView {
   onMessage(m) {
     if (m.t === 'library') { this.items = m.items || []; this.render(); }
     else if (m.t === 'settings') {
-      // le modifiche appena fatte qui vincono sull'eco un po' più vecchia che torna dall'iPad
-      const recent = performance.now() - (this.pendingAt || 0) < 800;
-      this.hostSettings = { ...m.s, ...(recent ? this.pending : {}) };
-      if (!recent) this.pending = {};
+      // Le modifiche fatte qui restano finché l'iPad non le conferma; se dopo 1,5 s non sono
+      // arrivate (messaggio perso) si rimandano.
+      const keys = Object.keys(this.pending);
+      if (keys.every(k => m.s[k] === this.pending[k])) this.pending = {};
+      else if (performance.now() - (this.pendingAt || 0) > 1500) {
+        this.send('settings', this.pending);
+        this.pendingAt = performance.now();
+      }
+      this.hostSettings = { ...m.s, ...this.pending };
       this.layout();
       this.refreshPanel?.();
     }

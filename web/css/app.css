@@ -240,7 +240,7 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, .6); }
 .host-box p { margin: 0; }
 
 /* secondo schermo */
-#view-prompter.follower [data-cmd]:not([data-cmd="close"]):not([data-cmd="flipH"]):not([data-cmd="flipV"]):not([data-cmd="fullscreen"]),
+#view-prompter.follower [data-cmd]:not([data-cmd="close"]):not([data-cmd="fullscreen"]),
 #view-prompter.follower #op-progress, #view-prompter.follower #op-speed, #view-prompter.follower .op-sep,
 #view-prompter.follower #op-link { display: none; }
 #follow-wait {

@@ -15,6 +15,9 @@ const views = {
 };
 let current = 'library';
 let reloadPending = false;
+const RESUME_KEY = 'tp.resume';
+let swReg = null;
+function checkForUpdate() { swReg?.update().catch(() => {}); }
 
 function show(name) {
   for (const [k, el] of Object.entries(views)) el.hidden = k !== name;
@@ -111,7 +114,10 @@ function updateTicker() {
   const need = host.clients.size > 0;
   if (need && !ticker) {
     ticker = setInterval(() => {
-      if (host.has('display') || tick++ % 2 === 0) host.send({ t: 'status', ...prompter.status() });
+      if (host.has('display') || tick % 2 === 0) host.send({ t: 'status', ...prompter.status() });
+      // ogni 2 s anche le impostazioni: chi ha perso un messaggio si rimette in pari da solo
+      if (tick % 20 === 0) host.send({ t: 'settings', s: settings.get() });
+      tick++;
     }, 100);
   } else if (!need && ticker) {
     clearInterval(ticker);
@@ -166,7 +172,9 @@ function hostBox(root) {
     const { remote, display } = host.counts();
     const who = [remote && `${remote} telecomand${remote === 1 ? 'o' : 'i'}`, display && `${display} scherm${display === 1 ? 'o' : 'i'}`]
       .filter(Boolean).join(', ');
+    const old = host.outdated();
     state.textContent = !host.enabled ? '' : host.state === 'online' ? 'Pronto' + (who ? ' · collegati: ' + who : ' · nessuno collegato')
+      + (old ? ` · ${old === 1 ? 'un dispositivo ha' : old + ' dispositivi hanno'} una versione diversa: chiudi e riapri l'app su ${old === 1 ? 'quel dispositivo' : 'quei dispositivi'}` : '')
       : host.state === 'starting' ? 'Avvio…' : host.error;
     state.dataset.state = host.state;
   };
@@ -199,21 +207,14 @@ let client = null;
 let clientRole = null;
 const remoteView = new RemoteView({ onExit: () => { stopClient(); backToLibrary(); } });
 
-const DISPLAY_KEY = 'tp.display';
 const follow = { script: null, settings: null, status: null };
-function displayFlips() {
-  try { return JSON.parse(localStorage.getItem(DISPLAY_KEY) || '{}'); } catch { return {}; }
-}
 
 function openFollower(script) {
-  const flips = displayFlips();
   follow.script = script;
   show('prompter');
   prompter.open(script || { id: '', title: '', text: '' }, {
     follow: {
-      flipH: !!flips.flipH, flipV: !!flips.flipV,
       settings: follow.settings, status: follow.status, hostW: follow.status?.stageW || 0, at: performance.now(),
-      onFlip: f => { try { localStorage.setItem(DISPLAY_KEY, JSON.stringify({ flipH: f.flipH, flipV: f.flipV })); } catch {} },
     },
   });
   views.prompter.classList.toggle('waiting', !script);
@@ -231,12 +232,12 @@ function displayMessage(m) {
 
 function setWaitMessage(state, msg) {
   document.getElementById('follow-wait-msg').textContent =
-    state === 'connected' ? 'Collegato. Apri uno script sull\'iPad.' : msg;
+    (state === 'connected' ? 'Collegato. Apri uno script sull\'iPad.' : msg) + (versionNote ? ' ' + versionNote : '');
 }
 
-function startClient(role) {
-  const code = document.getElementById('cl-code').value.replace(/\D/g, '');
-  const pin = document.getElementById('cl-pin').value.replace(/\D/g, '');
+function startClient(role, creds) {
+  const code = (creds?.code ?? document.getElementById('cl-code').value).replace(/\D/g, '');
+  const pin = (creds?.pin ?? document.getElementById('cl-pin').value).replace(/\D/g, '');
   if (code.length !== 6 || pin.length !== 4) { toast('Servono il codice di 6 cifre e il PIN di 4'); return; }
   saveClientCreds({ code, pin });
   linkDialog.close();
@@ -249,11 +250,27 @@ function startClient(role) {
       if (role === 'remote') remoteView.setState(st, msg);
       else setWaitMessage(st, msg);
     },
+    onVersion: hostV => versionWarning(hostV),
   });
   if (role === 'remote') { show('remote'); remoteView.open(client); }
   else { follow.settings = follow.status = null; openFollower(null); }
   client.start();
 }
+
+// iPad e questo dispositivo con versioni diverse: si dice quale aggiornare invece di fallire in silenzio.
+let versionNote = '';
+function versionWarning(hostV) {
+  const mine = self.APP_VERSION;
+  if (hostV === mine) { versionNote = ''; return; }
+  const ipadOlder = !hostV || hostV.localeCompare(mine, undefined, { numeric: true }) < 0;
+  versionNote = `Versioni diverse: iPad ${hostV || 'vecchia'}, questo dispositivo ${mine}. `
+    + (ipadOlder ? 'Aggiorna l\'iPad: chiudi lo script e torna alla libreria, oppure chiudi e riapri l\'app.'
+      : 'Questo dispositivo si sta aggiornando…');
+  toast(versionNote, 7000);
+  if (role() === 'remote') remoteView.flash(versionNote, 7000);
+  checkForUpdate();
+}
+const role = () => clientRole;
 
 function stopClient() {
   client?.stop();
@@ -289,16 +306,37 @@ function checkJoinLink() {
 checkJoinLink();
 addEventListener('hashchange', checkJoinLink);
 
+// I server pubblici non garantiscono la consegna: se manca qualcosa che si riceve una volta sola
+// (impostazioni, testo dello script), lo si richiede all'iPad salutandolo di nuovo.
+setInterval(() => {
+  if (!client || client.state !== 'connected') return;
+  const missing = clientRole === 'remote'
+    ? !remoteView.hostSettings || (remoteView.status.open && remoteView.script?.id !== remoteView.status.scriptId)
+    : !follow.settings || (follow.status?.open && follow.script?.id !== follow.status.scriptId);
+  if (missing) client.hello();
+}, 2000);
+
+// pagina chiusa o ricaricata: l'iPad toglie subito questo dispositivo dai collegati
+addEventListener('pagehide', () => client?.stop());
+
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   host.wake();
   client?.wake();
+  checkForUpdate();
 });
 
 // =====================================================================
 
 library.refresh();
 host.start();
+// dopo un aggiornamento il telefono o il secondo schermo riprendono da soli il collegamento
+const resumeRole = sessionStorage.getItem(RESUME_KEY);
+if (resumeRole) {
+  sessionStorage.removeItem(RESUME_KEY);
+  const c = clientCreds();
+  if (c.code && c.pin) startClient(resumeRole, c);
+}
 document.getElementById('app-version').textContent = 'Versione ' + (self.APP_VERSION || '');
 
 // Chiede al browser di non cancellare i dati salvati.
@@ -307,13 +345,24 @@ navigator.storage?.persist?.().catch(() => {});
 // Niente zoom con due dita su iPad.
 document.addEventListener('gesturestart', e => e.preventDefault());
 
-// Funzionamento offline. Una versione nuova si carica appena si torna alla libreria.
+// Funzionamento offline e aggiornamenti. Si cercano versioni nuove all'avvio, ogni volta che l'app torna
+// in primo piano e ogni 15 minuti. Telefono e secondo schermo si aggiornano subito e si ricollegano;
+// l'iPad aspetta che si chiuda lo script, per non ricaricare durante la lettura.
+function applyUpdate() {
+  if (clientRole) { try { sessionStorage.setItem(RESUME_KEY, clientRole); } catch {} }
+  location.reload();
+}
+
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
   const hadController = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker:', err));
+  navigator.serviceWorker.register('sw.js').then(r => { swReg = r; }).catch(err => console.warn('Service worker:', err));
+  setInterval(checkForUpdate, 15 * 60 * 1000);
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) return;
-    if (current === 'library' && !clientRole) location.reload();
-    else reloadPending = true;
+    if (clientRole || current === 'library') applyUpdate();
+    else {
+      reloadPending = true;
+      toast('Nuova versione pronta: si applica quando torni alla libreria', 5000);
+    }
   });
 }

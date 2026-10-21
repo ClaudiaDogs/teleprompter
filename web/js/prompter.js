@@ -154,7 +154,8 @@ export class Prompter {
     if (this.cfgCache) return this.cfgCache;
     const hs = f.settings || settings.get();
     const k = f.hostW > 0 ? this.el.stage.clientWidth / f.hostW : 1;
-    return this.cfgCache = { ...hs, fontSize: hs.fontSize * k, timerSize: hs.timerSize * k, flipH: f.flipH, flipV: f.flipV };
+    // anche lo specchio è quello dell'iPad (richiesta dell'utente: il secondo schermo segue tutto)
+    return this.cfgCache = { ...hs, fontSize: hs.fontSize * k, timerSize: hs.timerSize * k };
   }
 
   // Secondo schermo: nuove impostazioni o nuova posizione dall'iPad.
@@ -410,13 +411,8 @@ export class Prompter {
   command(name, arg) {
     const s = this.cfg();
     if (this.follower) {
-      // il secondo schermo ha solo ribaltamenti propri e chiusura
-      if (name === 'flipH' || name === 'flipV') {
-        this.follower[name] = !this.follower[name];
-        this.follower.onFlip?.(this.follower);
-        this.cfgCache = null;
-        this.applyStyle();
-      } else if (name === 'fullscreen') this.toggleFullscreen();
+      // il secondo schermo segue l'iPad in tutto: qui solo schermo intero e chiusura
+      if (name === 'fullscreen') this.toggleFullscreen();
       else if (name === 'close') { this.close(); return; }
       this.showBar();
       return;

@@ -69,7 +69,7 @@
   <div id="stage">
     <div id="mirror">
       <div id="viewport">
-        <div id="guide" data-style="arrows">
+        <div id="guide" class="guide" data-style="arrows">
           <div class="g-band"></div>
           <div class="g-line"></div>
           <div class="g-arrow left"></div>
@@ -148,13 +148,16 @@
   </div>
   <div id="rm-main" class="rm-main" hidden>
     <div id="rm-preview" class="rm-preview">
-      <div id="rm-ptext" class="rm-ptext"></div>
-      <div id="rm-pguide" class="rm-pguide"></div>
-      <div id="rm-pwait" class="rm-pwait">Arriva il testo…</div>
-      <div class="rm-pfont">
-        <button class="rm-pbtn" id="rm-psmaller" aria-label="Anteprima più piccola">a</button>
-        <button class="rm-pbtn" id="rm-pbigger" aria-label="Anteprima più grande">A</button>
+      <div id="rm-pview" class="rm-pview">
+        <div id="rm-pguide" class="guide" data-style="arrows">
+          <div class="g-band"></div><div class="g-line"></div>
+          <div class="g-arrow left"></div><div class="g-arrow right"></div>
+        </div>
+        <div class="rm-pclip"><div id="rm-ptext" class="rm-ptext"></div></div>
       </div>
+      <div id="rm-ptimer" class="rm-ptimer"></div>
+      <div id="rm-pcount" class="rm-pcount" hidden></div>
+      <div id="rm-pwait" class="rm-pwait">Arriva il testo…</div>
     </div>
     <div class="rm-times"><span id="rm-elapsed">00:00</span><span id="rm-remaining">−00:00</span></div>
     <input id="rm-progress" type="range" min="0" max="1000" step="1" value="0" aria-label="Avanzamento">

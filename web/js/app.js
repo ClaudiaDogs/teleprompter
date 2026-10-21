@@ -56,7 +56,8 @@ const hostUIs = new Set();
 const host = new LinkHost({
   onHello: (conn, isNew) => {
     if (conn.role === 'remote') conn.send({ t: 'library', items: libraryItems(library.scripts) });
-    if (conn.role === 'display') conn.send({ t: 'settings', s: settings.get() });
+    // impostazioni a tutti: anche il telefono mostra il testo esattamente come il prompter
+    conn.send({ t: 'settings', s: settings.get() });
     // il testo va anche al telecomando, che lo mostra in anteprima mentre scorre
     if (prompter.isOpen && !prompter.follower) sendScript(conn);
     conn.send({ t: 'status', ...prompter.status() });
@@ -92,14 +93,14 @@ async function handleRemoteCommand(msg) {
   host.send({ t: 'status', ...prompter.status() }); // conferma immediata al telefono
 }
 
-// Stato verso i collegati: 10 volte al secondo se c'è un secondo schermo, altrimenti 3.
-// (Il secondo schermo tra un aggiornamento e l'altro prosegue da solo con la velocità ricevuta.)
+// Stato verso i collegati: 10 volte al secondo se c'è un secondo schermo, altrimenti 5 (il telefono
+// mostra il testo che scorre). Tra un aggiornamento e l'altro proseguono da soli con la velocità ricevuta.
 let ticker = 0, tick = 0;
 function updateTicker() {
   const need = host.clients.size > 0;
   if (need && !ticker) {
     ticker = setInterval(() => {
-      if (host.has('display') || tick++ % 3 === 0) host.send({ t: 'status', ...prompter.status() });
+      if (host.has('display') || tick++ % 2 === 0) host.send({ t: 'status', ...prompter.status() });
     }, 100);
   } else if (!need && ticker) {
     clearInterval(ticker);
@@ -109,9 +110,9 @@ function updateTicker() {
 
 let settingsTimer;
 settings.subscribe(() => {
-  if (!host.has('display')) return;
+  if (!host.clients.size) return;
   clearTimeout(settingsTimer);
-  settingsTimer = setTimeout(() => host.send({ t: 'settings', s: settings.get() }, 'display'), 80);
+  settingsTimer = setTimeout(() => host.send({ t: 'settings', s: settings.get() }), 80);
 });
 
 // Riquadro del collegamento (nel pannello impostazioni e nella finestra Collegamento).

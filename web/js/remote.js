@@ -1,7 +1,7 @@
-// Il telecomando sul telefono: comanda l'iPad e ne mostra il testo che scorre, l'avanzamento e i tempi.
+// Il telecomando sul telefono: comanda l'iPad e ne mostra una copia fedele dello schermo
+// (stesse proporzioni, carattere, colori, margini, linea guida, timer e conto alla rovescia),
+// senza l'effetto specchio, insieme ad avanzamento e tempi.
 import { h, fmtTime, clamp } from './util.js';
-
-const FONT_KEY = 'tp.remoteFont';
 
 export class RemoteView {
   constructor({ onExit }) {
@@ -11,24 +11,25 @@ export class RemoteView {
       title: q('rm-title'), state: q('rm-state'), msg: q('rm-msg'), library: q('rm-library'), list: q('rm-list'),
       main: q('rm-main'), elapsed: q('rm-elapsed'), remaining: q('rm-remaining'), progress: q('rm-progress'),
       play: q('rm-play'), speed: q('rm-speed'), flipH: q('rm-flipH'), flipV: q('rm-flipV'),
-      preview: q('rm-preview'), ptext: q('rm-ptext'), pguide: q('rm-pguide'), pwait: q('rm-pwait'),
+      preview: q('rm-preview'), pview: q('rm-pview'), ptext: q('rm-ptext'), pguide: q('rm-pguide'),
+      ptimer: q('rm-ptimer'), pcount: q('rm-pcount'), pwait: q('rm-pwait'),
     };
+    this.client = null;
+    this.status = { open: false };
+    this.hostSettings = null;
+    this.items = [];
+    this.showList = false;
+    this.seeking = false;
     this.script = null;
     this.offset = 0;
     this.maxOffset = 0;
     this.linePx = 30;
     this.padTop = 0;
-    this.fontSize = Number(localStorage.getItem(FONT_KEY)) || 22;
+    this.shown = {};
+
     this.loop = this.loop.bind(this);
     this.bindPreview();
-    q('rm-psmaller').addEventListener('click', () => this.setFont(-2));
-    q('rm-pbigger').addEventListener('click', () => this.setFont(+2));
-    new ResizeObserver(() => this.measure()).observe(this.el.preview);
-    this.client = null;
-    this.status = { open: false };
-    this.items = [];
-    this.showList = false;
-    this.seeking = false;
+    new ResizeObserver(() => this.layout()).observe(this.el.main);
 
     q('rm-exit').addEventListener('click', () => this.onExit());
     q('rm-scripts').addEventListener('click', () => { this.showList = true; this.render(); });
@@ -55,6 +56,7 @@ export class RemoteView {
   open(client) {
     this.client = client;
     this.status = { open: false };
+    this.hostSettings = null;
     this.items = [];
     this.showList = false;
     this.script = null;
@@ -96,16 +98,41 @@ export class RemoteView {
 
   onMessage(m) {
     if (m.t === 'library') { this.items = m.items || []; this.render(); }
+    else if (m.t === 'settings') { this.hostSettings = m.s; this.layout(); }
     else if (m.t === 'status') {
-      const guideMoved = m.guidePos !== this.status.guidePos;
+      const old = this.status;
       this.status = m;
       this.statusAt = performance.now();
-      if (guideMoved) this.measure();
+      if (m.stageW !== old.stageW || m.stageH !== old.stageH || m.guidePos !== old.guidePos) this.layout();
       this.render();
     } else if (m.t === 'script') this.setScript(m);
   }
 
-  // ---------- anteprima del testo che scorre ----------
+  render() {
+    const st = this.status, e = this.el;
+    const list = !st.open || this.showList;
+    const wasHidden = e.main.hidden;
+    e.title.textContent = st.open ? st.title : 'Telecomando';
+    e.library.hidden = !list;
+    e.main.hidden = list;
+    if (list) {
+      e.list.replaceChildren(...(this.items.length
+        ? this.items.map(it => { const li = h('li', it.id === st.scriptId ? 'on' : null, it.title); li.dataset.id = it.id; return li; })
+        : [h('li', 'empty', this.state === 'connected' ? 'Nessuno script sull\'iPad.' : 'In attesa dell\'iPad…')]));
+      return;
+    }
+    if (wasHidden) this.layout(); // da nascosto non si può misurare
+    e.play.classList.toggle('playing', st.phase !== 'paused');
+    e.elapsed.textContent = fmtTime(st.elapsed);
+    e.remaining.textContent = '−' + fmtTime(Math.max(0, st.remaining), Math.ceil);
+    e.remaining.classList.toggle('warn', st.remaining <= 10 && (st.elapsed > 0 || st.phase !== 'paused'));
+    e.speed.textContent = st.phase === 'countdown' ? 'parte fra ' + Math.max(1, Math.ceil(st.countLeft)) : st.speedLabel;
+    e.flipH.classList.toggle('on', st.flipH);
+    e.flipV.classList.toggle('on', st.flipV);
+    if (!this.seeking) e.progress.value = Math.round(st.progress * 1000);
+  }
+
+  // ---------- copia dello schermo del prompter ----------
 
   setScript(m) {
     this.script = { id: m.id, text: m.text || '' };
@@ -113,29 +140,57 @@ export class RemoteView {
     for (const line of this.script.text.split('\n')) frag.append(h('p', null, line.trim() === '' ? ' ' : line));
     this.el.ptext.replaceChildren(frag);
     this.offset = 0;
-    this.measure();
+    this.layout();
     this.render();
   }
 
-  setFont(d) {
-    const progress = this.maxOffset > 0 ? this.offset / this.maxOffset : 0;
-    this.fontSize = clamp(this.fontSize + d, 14, 44);
-    try { localStorage.setItem(FONT_KEY, String(this.fontSize)); } catch {}
-    this.measure();
-    this.offset = progress * this.maxOffset;
-  }
+  // Riquadro con le proporzioni dello schermo dell'iPad; tutto il resto in scala, come sul prompter.
+  layout() {
+    const e = this.el, st = this.status, s = this.hostSettings;
+    if (e.main.hidden) return;
+    const hostW = st.stageW || 1024, hostH = st.stageH || 768;
+    const cs = getComputedStyle(e.main);
+    const availW = e.main.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (availW <= 0) return;
+    let w = availW, ht = (w * hostH) / hostW;
+    const maxH = innerHeight * 0.5;
+    if (ht > maxH) { ht = maxH; w = (ht * hostW) / hostH; }
+    e.preview.style.width = w + 'px';
+    e.preview.style.height = ht + 'px';
+    const k = w / hostW;
+    e.pcount.style.fontSize = Math.min(ht, w) * 0.42 + 'px';
+    if (!s) return;
 
-  measure() {
-    const e = this.el;
-    const boxH = e.preview.clientHeight;
-    if (!boxH) return;
-    const g = (this.status.guidePos ?? 33) / 100;
-    e.ptext.style.fontSize = this.fontSize + 'px';
-    this.linePx = this.fontSize * 1.35;
-    this.padTop = g * boxH - this.linePx / 2;
-    e.pguide.style.top = g * 100 + '%';
+    const fontPx = s.fontSize * k;
+    const arrowPx = Math.round(s.fontSize * 0.45) * k;
+    const arrows = s.guideVisible && s.guideStyle === 'arrows';
+    Object.assign(e.pview.style, {
+      left: s.marginLeft + '%', right: s.marginRight + '%', top: s.marginTop + '%', bottom: s.marginBottom + '%',
+    });
+    Object.assign(e.ptext.style, {
+      fontSize: fontPx + 'px', fontFamily: s.fontFamily, fontWeight: s.bold ? '700' : '400',
+      lineHeight: String(s.lineHeight), color: s.textColor, textAlign: s.align,
+      padding: arrows ? `0 ${arrowPx * 1.1 + 12 * k}px` : '0',
+    });
+    const g = e.pguide;
+    g.hidden = !s.guideVisible;
+    g.dataset.style = s.guideStyle;
+    g.style.top = s.guidePos + '%';
+    g.style.opacity = s.guideOpacity;
+    g.style.setProperty('--gc', s.guideColor);
+    g.style.setProperty('--band', fontPx * s.lineHeight + 'px');
+    g.style.setProperty('--arrow', arrowPx + 'px');
+    e.ptimer.hidden = !s.timerVisible;
+    Object.assign(e.ptimer.style, {
+      left: s.timerX + '%', top: s.timerY + '%', fontSize: s.timerSize * k + 'px', opacity: s.timerOpacity,
+    });
+
+    const progress = this.maxOffset > 0 ? this.offset / this.maxOffset : 0;
+    this.linePx = fontPx * s.lineHeight;
+    this.padTop = (s.guidePos / 100) * e.pview.clientHeight - this.linePx / 2;
     this.maxOffset = Math.max(0, e.ptext.offsetHeight - this.linePx);
-    this.boxH = boxH;
+    this.offset = progress * this.maxOffset;
+    this.place();
   }
 
   // Segue l'iPad: posizione ricevuta più la velocità per il tempo trascorso, con piccola correzione.
@@ -145,33 +200,51 @@ export class RemoteView {
     this.last = now;
     const e = this.el, st = this.status;
     if (e.main.hidden) return;
-    if (e.preview.clientHeight !== this.boxH) this.measure();
-    const ready = !!this.script && st.open && st.scriptId === this.script.id;
+    const ready = !!this.script && !!this.hostSettings && st.open && st.scriptId === this.script.id;
     e.pwait.hidden = ready;
-    e.ptext.hidden = !ready;
-    if (!ready || this.drag?.moved) return;
+    if (!ready) return;
     const age = (now - (this.statusAt || now)) / 1000;
     const playing = st.phase === 'playing';
-    const v = playing ? (st.velocity || 0) * this.maxOffset : 0;
-    const target = clamp(st.progress * this.maxOffset + v * age, 0, this.maxOffset);
-    const diff = target - this.offset;
-    this.offset = Math.abs(diff) > this.linePx * 4 ? target
-      : clamp(this.offset + v * dt + diff * Math.min(1, dt * 4), 0, this.maxOffset);
-    this.place();
+    if (!this.drag?.moved) {
+      const v = playing ? (st.velocity || 0) * this.maxOffset : 0;
+      const target = clamp(st.progress * this.maxOffset + v * age, 0, this.maxOffset);
+      const diff = target - this.offset;
+      this.offset = Math.abs(diff) > this.linePx * 4 ? target
+        : clamp(this.offset + v * dt + diff * Math.min(1, dt * 4), 0, this.maxOffset);
+      this.place();
+    }
+    this.renderOverlays(age, playing);
   }
 
   place() {
     const dpr = devicePixelRatio || 1;
     const y = Math.round((this.padTop - this.offset) * dpr) / dpr;
-    this.el.ptext.style.transform = `translate3d(0,${y}px,0)`;
+    if (y !== this.shown.y) { this.shown.y = y; this.el.ptext.style.transform = `translate3d(0,${y}px,0)`; }
   }
 
-  // Trascinando l'anteprima si sposta il testo sull'iPad; un tocco è play/pausa.
+  // Timer e conto alla rovescia come li vede chi legge.
+  renderOverlays(age, playing) {
+    const e = this.el, st = this.status, s = this.hostSettings, sh = this.shown;
+    const elapsed = st.elapsed + (playing ? age : 0);
+    const rem = st.remaining - (playing ? age : 0);
+    const el = fmtTime(elapsed), re = '−' + fmtTime(Math.max(0, rem), Math.ceil);
+    const txt = s.timerMode === 'elapsed' ? el : s.timerMode === 'remaining' ? re : `${el}  ${re}`;
+    const warn = rem <= 10 && (elapsed > 0 || st.phase !== 'paused');
+    if (txt !== sh.timer || warn !== sh.warn) {
+      sh.timer = txt; sh.warn = warn;
+      e.ptimer.textContent = txt;
+      e.ptimer.classList.toggle('warn', warn);
+    }
+    const cd = st.phase === 'countdown' ? Math.max(1, Math.ceil(st.countLeft - age)) : 0;
+    if (cd !== sh.cd) { sh.cd = cd; e.pcount.hidden = !cd; e.pcount.textContent = cd || ''; }
+  }
+
+  // Trascinando il testo si sposta il punto di lettura sull'iPad. Il tocco non fa nulla:
+  // play e pausa solo dal tasto apposito.
   bindPreview() {
     const p = this.el.preview;
     let lastSent = 0;
     p.addEventListener('pointerdown', e => {
-      if (e.target.closest('button')) return;
       this.drag = { id: e.pointerId, y: e.clientY, start: this.offset, moved: false };
       try { p.setPointerCapture(e.pointerId); } catch {}
     });
@@ -190,36 +263,13 @@ export class RemoteView {
       const d = this.drag;
       if (!d || d.id !== e.pointerId) return;
       this.drag = null;
-      if (d.moved) {
-        if (this.maxOffset > 0) this.send('seek', this.offset / this.maxOffset);
-        this.status = { ...this.status, progress: this.maxOffset > 0 ? this.offset / this.maxOffset : 0 };
-        this.statusAt = performance.now();
-      } else if (e.type === 'pointerup') this.send('toggle');
+      if (!d.moved || this.maxOffset <= 0) return;
+      this.send('seek', this.offset / this.maxOffset);
+      this.status = { ...this.status, progress: this.offset / this.maxOffset };
+      this.statusAt = performance.now();
     };
     p.addEventListener('pointerup', end);
     p.addEventListener('pointercancel', end);
-  }
-
-  render() {
-    const st = this.status, e = this.el;
-    const list = !st.open || this.showList;
-    e.title.textContent = st.open ? st.title : 'Telecomando';
-    e.library.hidden = !list;
-    e.main.hidden = list;
-    if (list) {
-      e.list.replaceChildren(...(this.items.length
-        ? this.items.map(it => { const li = h('li', it.id === st.scriptId ? 'on' : null, it.title); li.dataset.id = it.id; return li; })
-        : [h('li', 'empty', this.state === 'connected' ? 'Nessuno script sull\'iPad.' : 'In attesa dell\'iPad…')]));
-      return;
-    }
-    e.play.classList.toggle('playing', st.phase !== 'paused');
-    e.elapsed.textContent = fmtTime(st.elapsed);
-    e.remaining.textContent = '−' + fmtTime(Math.max(0, st.remaining), Math.ceil);
-    e.remaining.classList.toggle('warn', st.remaining <= 10 && (st.elapsed > 0 || st.phase !== 'paused'));
-    e.speed.textContent = st.phase === 'countdown' ? 'parte fra ' + Math.max(1, Math.ceil(st.countLeft)) : st.speedLabel;
-    e.flipH.classList.toggle('on', st.flipH);
-    e.flipV.classList.toggle('on', st.flipV);
-    if (!this.seeking) e.progress.value = Math.round(st.progress * 1000);
   }
 
   async lockScreen() {

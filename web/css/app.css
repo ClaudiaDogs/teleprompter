@@ -104,28 +104,28 @@ button { cursor: pointer; }
 }
 #text p { margin: 0; }
 
-#guide { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; z-index: 0; }
-#guide .g-line, #guide .g-band, #guide .g-arrow { display: none; position: absolute; }
-#guide .g-line { left: 0; right: 0; top: -1.5px; height: 3px; background: var(--gc); }
-#guide .g-band { left: 0; right: 0; height: var(--band); top: calc(var(--band) / -2); background: var(--gc); opacity: .35; }
-#guide .g-arrow {
+.guide { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; z-index: 0; }
+.guide .g-line, .guide .g-band, .guide .g-arrow { display: none; position: absolute; }
+.guide .g-line { left: 0; right: 0; top: -1.5px; height: 3px; background: var(--gc); }
+.guide .g-band { left: 0; right: 0; height: var(--band); top: calc(var(--band) / -2); background: var(--gc); opacity: .35; }
+.guide .g-arrow {
   top: calc(var(--arrow) * -1); width: 0; height: 0;
   border-top: var(--arrow) solid transparent; border-bottom: var(--arrow) solid transparent;
 }
-#guide .g-arrow.left { left: 0; border-left: calc(var(--arrow) * 1.1) solid var(--gc); }
-#guide .g-arrow.right { right: 0; border-right: calc(var(--arrow) * 1.1) solid var(--gc); }
-#guide[data-style="arrows"] .g-arrow, #guide[data-style="line"] .g-line, #guide[data-style="band"] .g-band { display: block; }
-#guide .g-handle { position: absolute; top: -32px; width: 64px; height: 64px; pointer-events: auto; cursor: ns-resize; }
-#guide .g-handle.left { left: 0; }
-#guide .g-handle.right { right: 0; }
+.guide .g-arrow.left { left: 0; border-left: calc(var(--arrow) * 1.1) solid var(--gc); }
+.guide .g-arrow.right { right: 0; border-right: calc(var(--arrow) * 1.1) solid var(--gc); }
+.guide[data-style="arrows"] .g-arrow, .guide[data-style="line"] .g-line, .guide[data-style="band"] .g-band { display: block; }
+.guide .g-handle { position: absolute; top: -32px; width: 64px; height: 64px; pointer-events: auto; cursor: ns-resize; }
+.guide .g-handle.left { left: 0; }
+.guide .g-handle.right { right: 0; }
 
-#timer {
+#timer, .rm-ptimer {
   position: absolute; z-index: 3; transform: translate(-50%, -50%); padding: .1em .3em;
   font-family: system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   font-variant-numeric: tabular-nums; font-weight: 600; color: #fff; white-space: pre;
   cursor: move; line-height: 1.1;
 }
-#timer.warn { color: #ff3b30; }
+#timer.warn, .rm-ptimer.warn { color: #ff3b30; }
 #countdown {
   position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%);
   font-size: min(42vh, 42vw); font-weight: 700; line-height: 1; color: #fff; pointer-events: none;
@@ -325,31 +325,26 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, .6); }
   .cl-fields input { width: 8ch; font-size: 22px; }
 }
 
-/* anteprima del testo sul telecomando */
+/* telecomando: copia dello schermo del prompter (senza specchio), con le sue proporzioni */
 .rm-preview {
-  position: relative; flex: 0 0 auto; height: 40vh; min-height: 200px; overflow: hidden;
-  background: #000; border: 1px solid var(--line); border-radius: 14px; margin: 0 -6px;
+  position: relative; flex: 0 0 auto; align-self: center; overflow: hidden; background: #000;
+  outline: 1px solid var(--line); border-radius: 6px;
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
+.rm-pview { position: absolute; }
+.rm-pclip { position: absolute; inset: 0; overflow: hidden; z-index: 1; pointer-events: none; }
 .rm-ptext {
-  position: absolute; left: 0; right: 0; top: 0; padding: 0 16px; will-change: transform;
+  position: absolute; left: 0; right: 0; top: 0;
   white-space: pre-wrap; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto;
-  color: #fff; font-size: 22px; line-height: 1.35;
 }
 .rm-ptext p { margin: 0; }
-.rm-pguide { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; }
-.rm-pguide::before, .rm-pguide::after {
-  content: ""; position: absolute; top: -8px; border-top: 8px solid transparent; border-bottom: 8px solid transparent;
+.rm-ptimer { cursor: default; pointer-events: none; }
+.rm-pcount {
+  position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none;
+  font-weight: 700; line-height: 1; color: #fff; font-variant-numeric: tabular-nums;
+  font-family: system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
 }
-.rm-pguide::before { left: 2px; border-left: 10px solid var(--accent); }
-.rm-pguide::after { right: 2px; border-right: 10px solid var(--accent); }
-.rm-pwait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 15px; }
-.rm-pfont { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 6px; }
-.rm-pbtn {
-  width: 36px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: rgba(31, 31, 37, .85);
-  font-weight: 700; font-size: 15px; padding: 0;
-}
-#rm-pbigger { font-size: 19px; }
+.rm-pwait { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; color: var(--muted); font-size: 15px; background: #000; }
 .rm-main .rm-play { width: 96px; height: 96px; margin: 0; }
 .rm-main .rm-play svg { width: 44px; height: 44px; }
 .rm-main { gap: 10px; }

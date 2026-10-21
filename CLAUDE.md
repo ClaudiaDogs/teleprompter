@@ -38,6 +38,10 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   `stageW`×`stageH` dell'iPad, impostazioni dell'iPad (messaggio `settings`, ora mandato a tutti) riscalate
   sulla larghezza, linea guida (`.guide`, classe condivisa), timer e conto alla rovescia. Trascinare il testo
   sposta l'iPad; il tocco NON fa play/pausa (richiesta esplicita: solo dal tasto).
+  Dalla 0.6.0 il telefono modifica tutte le impostazioni del prompter: `settings-schema.js` è l'elenco unico
+  (iPad e telefono), `panel.js` lo disegna con uno «store» che sul telefono manda `cmd settings` (al massimo
+  ogni 80 ms, l'iPad accetta solo chiavi di DEFAULTS col tipo giusto), `resetSettings` e `duration`
+  (durata dello script aperto, `Prompter.setScriptDuration`). Le modifiche locali vincono sull'eco per 800 ms.
 - Verifica della sintassi: `node --check` non ha segnalato un a capo dentro una stringa in `remote.js`;
   controllare caricando il modulo nel browser (`await import('/js/x.js?x=' + Date.now())`).
 - Voce (`voice.js`, modalità di scorrimento `voice`): Web Speech API (`webkitSpeechRecognition`), continuo con

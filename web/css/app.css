@@ -353,3 +353,12 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, .6); }
 #view-remote .topbar h1 { flex: 1 1 auto; flex-basis: auto; }
 #view-remote .topbar .btn { flex: 0 0 auto; }
 .rm-main > * { flex-shrink: 0; }
+
+/* impostazioni del prompter dal telecomando */
+.rm-controls { display: flex; flex-direction: column; gap: 10px; }
+.rm-controls > * { flex-shrink: 0; }
+.rm-main.editing .rm-preview { position: sticky; top: 0; z-index: 6; }
+.rm-settings-head { display: flex; align-items: center; gap: 10px; padding: 4px 0 2px; }
+.rm-settings-head .muted { flex: 1; text-align: center; }
+#rm-settings-body .psec h3 { margin-top: 18px; }
+#rm-settings-body { padding-bottom: 40px; }

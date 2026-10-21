@@ -4,7 +4,7 @@ import { Prompter } from './prompter.js';
 import { RemoteView } from './remote.js';
 import { LinkHost, LinkClient, clientCreds, saveClientCreds } from './link.js';
 import { db } from './db.js';
-import { settings } from './settings.js';
+import { settings, DEFAULTS } from './settings.js';
 import { h, toast } from './util.js';
 
 const views = {
@@ -87,7 +87,18 @@ async function handleRemoteCommand(msg) {
     openPrompter(s);
     return;
   }
+  // impostazioni del prompter cambiate dal telefono: solo chiavi note e del tipo giusto
+  if (msg.c === 'settings' && msg.arg && typeof msg.arg === 'object') {
+    const patch = {};
+    for (const [k, v] of Object.entries(msg.arg)) {
+      if (k in DEFAULTS && typeof v === typeof DEFAULTS[k] && (typeof v !== 'number' || Number.isFinite(v))) patch[k] = v;
+    }
+    if (Object.keys(patch).length) settings.set(patch);
+    return;
+  }
+  if (msg.c === 'resetSettings') { settings.reset(); toast('Impostazioni ripristinate dal telefono'); return; }
   if (!prompter.isOpen || prompter.follower) return;
+  if (msg.c === 'duration') { prompter.setScriptDuration(typeof msg.arg === 'number' ? msg.arg : null); return; }
   if (msg.c === 'close') { prompter.close(); return; }
   prompter.command(msg.c, typeof msg.arg === 'number' ? msg.arg : undefined);
   host.send({ t: 'status', ...prompter.status() }); // conferma immediata al telefono

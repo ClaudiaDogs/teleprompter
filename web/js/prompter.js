@@ -3,11 +3,12 @@
 // Coordinate: tutto ciò che vede chi legge (testo, guida, timer, countdown) sta dentro #mirror ed è
 // disegnato dritto; il ribaltamento è un scale(-1) applicato a #mirror. `offset` sono i pixel di testo
 // già passati sotto la linea guida: 0 = prima riga sulla guida, maxOffset = ultima riga sulla guida.
-import { settings, FONTS } from './settings.js';
+import { settings } from './settings.js';
 import { db } from './db.js';
 import { h, clamp, toast, fmtTime, estimateSeconds, WPM } from './util.js';
 import { buildPanel } from './panel.js';
-import { VoiceListener, VOICE_LANGS, WORD_RE, norm, findMatch, voiceSupported } from './voice.js';
+import { VoiceListener, WORD_RE, norm, findMatch, voiceSupported } from './voice.js';
+import { settingsSchema } from './settings-schema.js';
 
 const BAR_HIDE_MS = 2500;
 const DRAG_THRESHOLD = 8;
@@ -705,107 +706,24 @@ export class Prompter {
   // ---------- pannello impostazioni ----------
 
   panelSchema() {
-    const pct = v => v + '%';
-    return [
-      { title: 'Testo', items: [
-        { type: 'range', key: 'fontSize', label: 'Dimensione', min: 16, max: 220, step: 1, fmt: v => v + ' px' },
-        { type: 'select', key: 'fontFamily', label: 'Carattere', options: FONTS },
-        { type: 'toggle', key: 'bold', label: 'Grassetto' },
-        { type: 'range', key: 'lineHeight', label: 'Interlinea', min: 1, max: 2.5, step: 0.05, fmt: v => v.toFixed(2) },
-        { type: 'segmented', key: 'align', label: 'Allineamento', options: [['left', 'Sinistra'], ['center', 'Centro'], ['right', 'Destra']] },
-        { type: 'color', key: 'textColor', label: 'Colore del testo' },
-      ] },
-      { title: 'Specchio', items: [
-        { type: 'toggle', key: 'flipH', label: 'Ribalta orizzontale' },
-        { type: 'toggle', key: 'flipV', label: 'Ribalta verticale' },
-      ] },
-      { title: 'Margini', items: [
-        { type: 'range', key: 'marginLeft', label: 'Sinistro', min: 0, max: 40, step: 0.5, fmt: pct },
-        { type: 'range', key: 'marginRight', label: 'Destro', min: 0, max: 40, step: 0.5, fmt: pct },
-        { type: 'range', key: 'marginTop', label: 'Alto', min: 0, max: 45, step: 0.5, fmt: pct },
-        { type: 'range', key: 'marginBottom', label: 'Basso', min: 0, max: 45, step: 0.5, fmt: pct },
-      ] },
-      { title: 'Scorrimento', items: [
-        { type: 'segmented', key: 'scrollMode', label: 'Modalità', options: [['speed', 'Velocità'], ['duration', 'Durata'], ['voice', 'Voce']] },
-        { type: 'select', key: 'voiceLang', label: 'Lingua di chi parla', options: VOICE_LANGS,
-          show: s => s.scrollMode === 'voice' },
-        { type: 'custom', label: '', show: s => s.scrollMode === 'voice', render: row => {
-          row.append(h('div', 'pnote', voiceSupported()
-            ? 'Con play il microfono ascolta e il testo avanza mentre leggi. Se salti o improvvisi, aspetta e si riaggancia quando torni allo script. Serve internet (su alcuni dispositivi funziona anche senza).'
-            : 'Questo browser non ha il riconoscimento vocale: usa Safari su iPad e iPhone, oppure Chrome.'));
-          return null;
-        } },
-        { type: 'range', key: 'speed', label: 'Velocità', min: 1, max: 200, step: 1, fmt: v => v + ' righe/min',
-          show: s => s.scrollMode === 'speed' },
-        { type: 'custom', label: 'Durata di questo script', show: s => s.scrollMode === 'duration',
-          render: row => this.durationControl(row) },
-        { type: 'range', key: 'jumpLines', label: 'Salto di frecce e telecomandi', min: 1, max: 15, step: 1,
-          fmt: v => v + (v === 1 ? ' riga' : ' righe') },
-      ] },
-      { title: 'Linea guida', items: [
-        { type: 'toggle', key: 'guideVisible', label: 'Mostra' },
-        { type: 'segmented', key: 'guideStyle', label: 'Stile', options: [['arrows', 'Frecce'], ['line', 'Linea'], ['band', 'Fascia']] },
-        { type: 'range', key: 'guidePos', label: 'Posizione', min: 3, max: 97, step: 0.5, fmt: pct },
-        { type: 'range', key: 'guideOpacity', label: 'Opacità', min: 0.05, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + '%' },
-        { type: 'color', key: 'guideColor', label: 'Colore' },
-      ] },
-      { title: 'Conto alla rovescia', items: [
-        { type: 'range', key: 'countdown', label: 'Durata', min: 0, max: 10, step: 1, fmt: v => v ? v + ' s' : 'spento' },
-        { type: 'toggle', key: 'countdownOnResume', label: 'Anche alla ripresa dopo una pausa' },
-      ] },
-      { title: 'Timer', items: [
-        { type: 'toggle', key: 'timerVisible', label: 'Mostra' },
-        { type: 'segmented', key: 'timerMode', label: 'Mostra il tempo', options: [['elapsed', 'Trascorso'], ['remaining', 'Rimanente'], ['both', 'Entrambi']] },
-        { type: 'range', key: 'timerSize', label: 'Dimensione', min: 14, max: 200, step: 1, fmt: v => v + ' px' },
-        { type: 'range', key: 'timerOpacity', label: 'Opacità', min: 0.1, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + '%' },
-        { type: 'range', key: 'timerX', label: 'Posizione orizzontale', min: 2, max: 98, step: 1, fmt: pct },
-        { type: 'range', key: 'timerY', label: 'Posizione verticale', min: 2, max: 98, step: 1, fmt: pct },
-      ] },
-      { title: 'Pannello', items: [
-        { type: 'segmented', key: 'panelSide', label: 'Lato', options: [['left', 'Sinistra'], ['right', 'Destra']] },
-      ] },
-    ];
+    return settingsSchema({
+      duration: {
+        get: () => (this.script ? { duration: this.script.duration, estimate: estimateSeconds(this.script.text) } : null),
+        save: v => this.setScriptDuration(v),
+      },
+    });
   }
 
-  durationControl(row) {
-    const box = h('div', 'dur');
-    const min = h('input'), sec = h('input');
-    for (const [inp, max] of [[min, 599], [sec, 59]]) Object.assign(inp, { type: 'number', min: 0, max, inputMode: 'numeric' });
-    const est = h('button', 'btn small', 'Stima');
-    est.type = 'button';
-    const note = h('div', 'pnote');
-    box.append(min, h('span', null, 'min'), sec, h('span', null, 's'), est);
-    row.append(box, note);
-
-    const save = async v => {
-      if (!this.script) return;
-      this.script.duration = v;
-      this.script.updatedAt = Date.now();
-      this.runDuration = this.scriptDuration();
-      this.render(true);
-      await db.put(this.script);
-    };
-    const read = () => {
-      if (min.value === '' && sec.value === '') return null;
-      const v = (parseInt(min.value, 10) || 0) * 60 + (parseInt(sec.value, 10) || 0);
-      return v > 0 ? v : null;
-    };
-    min.addEventListener('change', () => save(read()));
-    sec.addEventListener('change', () => save(read()));
-    est.addEventListener('click', () => { save(null); fill(); });
-
-    const fill = () => {
-      if (!this.script) return;
-      const d = this.script.duration, e = estimateSeconds(this.script.text);
-      min.value = d == null ? '' : Math.floor(d / 60);
-      sec.value = d == null ? '' : d % 60;
-      min.placeholder = Math.floor(e / 60);
-      sec.placeholder = String(e % 60).padStart(2, '0');
-      note.textContent = d == null
-        ? `Stima a 150 parole/min: ${fmtTime(e)}. Scrivi una durata per fissarla.`
-        : `Salvata con lo script. Durante la lettura + e − tolgono o aggiungono 5 s.`;
-    };
-    return fill;
+  // Durata salvata con lo script (null = stima a 150 parole/min). Usata dal pannello e dal telecomando.
+  async setScriptDuration(v) {
+    if (!this.script || this.follower) return;
+    this.script.duration = Number.isFinite(v) && v > 0 ? Math.round(v) : null;
+    this.script.updatedAt = Date.now();
+    this.runDuration = this.scriptDuration();
+    this.render(true);
+    this.refreshPanel();
+    this.emitStatus();
+    await db.put(this.script);
   }
 
   // ---------- schermo sempre acceso ----------
@@ -838,6 +756,7 @@ export class Prompter {
       elapsed: this.elapsed, remaining: this.remaining(), countLeft: this.countLeft,
       speedLabel: this.speedLabel(),
       flipH: s.flipH, flipV: s.flipV, stageW: this.el.stage.clientWidth, stageH: this.el.stage.clientHeight, guidePos: s.guidePos,
+      duration: this.script.duration ?? null, estimate: estimateSeconds(this.script.text),
     };
   }
 

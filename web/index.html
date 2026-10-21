@@ -159,6 +159,7 @@
       <div id="rm-pcount" class="rm-pcount" hidden></div>
       <div id="rm-pwait" class="rm-pwait">Arriva il testo…</div>
     </div>
+    <div id="rm-controls" class="rm-controls">
     <div class="rm-times"><span id="rm-elapsed">00:00</span><span id="rm-remaining">−00:00</span></div>
     <input id="rm-progress" type="range" min="0" max="1000" step="1" value="0" aria-label="Avanzamento">
     <button id="rm-play" class="rm-play" data-rc="toggle" aria-label="Play / pausa">
@@ -186,6 +187,18 @@
     <div class="rm-row">
       <button class="rm-btn wide" id="rm-scripts">Cambia script</button>
       <button class="rm-btn wide danger" data-rc="close">Chiudi script</button>
+    </div>
+    <div class="rm-row">
+      <button class="rm-btn wide" id="rm-settings-open">Impostazioni del prompter</button>
+    </div>
+    </div>
+    <div id="rm-settings" class="rm-settings" hidden>
+      <div class="rm-settings-head">
+        <button id="rm-settings-done" class="btn primary">‹ Fatto</button>
+        <span class="muted small">Le modifiche arrivano subito all'iPad</span>
+        <button id="rm-settings-reset" class="btn small">Ripristina</button>
+      </div>
+      <div id="rm-settings-body"></div>
     </div>
   </div>
 </section>

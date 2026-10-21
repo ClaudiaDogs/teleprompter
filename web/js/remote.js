@@ -2,6 +2,8 @@
 // (stesse proporzioni, carattere, colori, margini, linea guida, timer e conto alla rovescia),
 // senza l'effetto specchio, insieme ad avanzamento e tempi.
 import { h, fmtTime, clamp } from './util.js';
+import { buildPanel } from './panel.js';
+import { settingsSchema } from './settings-schema.js';
 
 export class RemoteView {
   constructor({ onExit }) {
@@ -13,6 +15,7 @@ export class RemoteView {
       play: q('rm-play'), speed: q('rm-speed'), flipH: q('rm-flipH'), flipV: q('rm-flipV'),
       preview: q('rm-preview'), pview: q('rm-pview'), ptext: q('rm-ptext'), pguide: q('rm-pguide'),
       ptimer: q('rm-ptimer'), pcount: q('rm-pcount'), pwait: q('rm-pwait'),
+      controls: q('rm-controls'), settings: q('rm-settings'), settingsBody: q('rm-settings-body'),
     };
     this.client = null;
     this.status = { open: false };
@@ -30,6 +33,16 @@ export class RemoteView {
     this.loop = this.loop.bind(this);
     this.bindPreview();
     new ResizeObserver(() => this.layout()).observe(this.el.main);
+
+    // impostazioni del prompter: il pannello legge e scrive quelle dell'iPad
+    this.store = { get: () => this.hostSettings || {}, set: patch => this.changeSettings(patch) };
+    this.pending = {};
+    this.outgoing = {};
+    q('rm-settings-open').addEventListener('click', () => this.openSettings(true));
+    q('rm-settings-done').addEventListener('click', () => this.openSettings(false));
+    q('rm-settings-reset').addEventListener('click', () => {
+      if (confirm('Ripristinare tutte le impostazioni predefinite del prompter?')) this.send('resetSettings');
+    });
 
     q('rm-exit').addEventListener('click', () => this.onExit());
     q('rm-scripts').addEventListener('click', () => { this.showList = true; this.render(); });
@@ -61,6 +74,7 @@ export class RemoteView {
     this.showList = false;
     this.script = null;
     this.el.ptext.replaceChildren();
+    this.openSettings(false);
     this.setState('connecting', 'collegamento in corso…');
     this.render();
     this.lockScreen();
@@ -98,12 +112,20 @@ export class RemoteView {
 
   onMessage(m) {
     if (m.t === 'library') { this.items = m.items || []; this.render(); }
-    else if (m.t === 'settings') { this.hostSettings = m.s; this.layout(); }
+    else if (m.t === 'settings') {
+      // le modifiche appena fatte qui vincono sull'eco un po' più vecchia che torna dall'iPad
+      const recent = performance.now() - (this.pendingAt || 0) < 800;
+      this.hostSettings = { ...m.s, ...(recent ? this.pending : {}) };
+      if (!recent) this.pending = {};
+      this.layout();
+      this.refreshPanel?.();
+    }
     else if (m.t === 'status') {
       const old = this.status;
       this.status = m;
       this.statusAt = performance.now();
       if (m.stageW !== old.stageW || m.stageH !== old.stageH || m.guidePos !== old.guidePos) this.layout();
+      if (this.settingsOpen && (m.duration !== old.duration || m.estimate !== old.estimate)) this.refreshPanel?.();
       this.render();
     } else if (m.t === 'script') this.setScript(m);
   }
@@ -132,6 +154,46 @@ export class RemoteView {
     if (!this.seeking) e.progress.value = Math.round(st.progress * 1000);
   }
 
+  // ---------- impostazioni del prompter ----------
+
+  openSettings(open) {
+    const e = this.el;
+    if (open && !this.hostSettings) { this.flash("In attesa delle impostazioni dall'iPad…"); return; }
+    if (open && !this.refreshPanel) {
+      this.refreshPanel = buildPanel(e.settingsBody, settingsSchema({
+        remote: true,
+        duration: {
+          get: () => (this.status.open ? { duration: this.status.duration ?? null, estimate: this.status.estimate || 0 } : null),
+          save: v => this.send('duration', v),
+        },
+      }), this.store);
+    }
+    this.settingsOpen = open;
+    e.settings.hidden = !open;
+    e.controls.hidden = open;
+    e.main.classList.toggle('editing', open);
+    this.layout();
+    if (open) { this.refreshPanel(); e.main.scrollTop = 0; }
+  }
+
+  // Si vede subito sul telefono e si manda all'iPad al massimo 12 volte al secondo.
+  changeSettings(patch) {
+    this.hostSettings = { ...this.hostSettings, ...patch };
+    this.pending = { ...this.pending, ...patch };
+    this.pendingAt = performance.now();
+    Object.assign(this.outgoing, patch);
+    this.layout();
+    this.refreshPanel?.();
+    if (!this.sendTimer) {
+      this.sendTimer = setTimeout(() => {
+        this.sendTimer = null;
+        const out = this.outgoing;
+        this.outgoing = {};
+        this.send('settings', out);
+      }, 80);
+    }
+  }
+
   // ---------- copia dello schermo del prompter ----------
 
   setScript(m) {
@@ -153,7 +215,7 @@ export class RemoteView {
     const availW = e.main.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     if (availW <= 0) return;
     let w = availW, ht = (w * hostH) / hostW;
-    const maxH = innerHeight * 0.5;
+    const maxH = innerHeight * (this.settingsOpen ? 0.36 : 0.5); // più spazio al pannello mentre si modifica
     if (ht > maxH) { ht = maxH; w = (ht * hostW) / hostH; }
     e.preview.style.width = w + 'px';
     e.preview.style.height = ht + 'px';

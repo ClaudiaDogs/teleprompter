@@ -20,7 +20,7 @@ button { cursor: pointer; }
 .muted { color: var(--muted); }
 
 .view { position: fixed; inset: 0; display: flex; flex-direction: column; }
-#view-library, #view-editor {
+#view-library, #view-editor, #view-remote {
   background: var(--bg);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }

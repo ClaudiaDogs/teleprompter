@@ -1,5 +1,6 @@
 // Importazione di file: .txt, .md, .rtf, .html, .pdf.
 import { tidy } from './util.js';
+import { fromHTML, scriptFields } from './rich.js';
 
 export const fileExt = name => (name.match(/\.([^.]+)$/)?.[1] || '').toLowerCase();
 
@@ -12,9 +13,11 @@ export async function importFile(file) {
   }
 
   const raw = await readText(file);
+  if (ext === 'html' || ext === 'htm' || /html/.test(file.type)) {
+    return { title, ...scriptFields(fromHTML(raw)) }; // grassetti, corsivi, evidenziazioni restano
+  }
   let text;
   if (ext === 'rtf' || raw.startsWith('{\\rtf')) text = rtfToText(raw);
-  else if (ext === 'html' || ext === 'htm' || /html/.test(file.type)) text = htmlToText(raw);
   else if (ext === 'md' || ext === 'markdown') text = markdownToText(raw);
   else text = raw;
   return { title, text: tidy(text) };
@@ -25,30 +28,6 @@ async function readText(file) {
   const buf = await file.arrayBuffer();
   try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
   catch { return new TextDecoder('windows-1252').decode(buf); }
-}
-
-const BLOCK = /^(P|DIV|H[1-6]|LI|UL|OL|TR|TABLE|BLOCKQUOTE|PRE|SECTION|ARTICLE|HEADER|FOOTER|ASIDE|NAV|DD|DT|DL|FIGURE|FIGCAPTION|HR|MAIN|ADDRESS)$/;
-
-export function htmlToText(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script,style,noscript,template,head').forEach(n => n.remove());
-  let out = '';
-  const walk = node => {
-    for (const c of node.childNodes) {
-      if (c.nodeType === 3) out += c.nodeValue.replace(/\s+/g, ' ');
-      else if (c.nodeType === 1) {
-        const tag = c.tagName;
-        if (tag === 'BR') { out += '\n'; continue; }
-        const block = BLOCK.test(tag);
-        if (block) out += '\n';
-        if (tag === 'LI') out += '• ';
-        walk(c);
-        if (block) out += '\n';
-      }
-    }
-  };
-  walk(doc.body || doc.documentElement);
-  return out.split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
 export function markdownToText(md) {

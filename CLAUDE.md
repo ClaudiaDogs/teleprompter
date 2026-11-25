@@ -54,6 +54,13 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   * Chiudendo la pagina il client manda subito un `bye` già cifrato (`byeBytes`).
 - Verifica della sintassi: `node --check` non ha segnalato un a capo dentro una stringa in `remote.js`;
   controllare caricando il modulo nel browser (`await import('/js/x.js?x=' + Date.now())`).
+- Testo formattato (dalla 0.7.0, `rich.js`): grassetto, corsivo, sottolineato, barrato, evidenziato (colore).
+  Lo script tiene `text` (semplice: ricerca, conteggi, voce) e `html` canonico (`<p>` con b/i/u/s/mark) solo se
+  c'è formattazione. L'HTML non entra mai con innerHTML: si rilegge in righe (`fromHTML`/`fromDOM`) e si ridisegna
+  (`renderLines`). L'incolla (editor `contenteditable` e riquadro Incolla) legge anche gli stili in linea
+  (Google Documenti: `<b style="font-weight:normal">`; Word: `background` per l'evidenziato); sfondi bianchi,
+  grigi chiari o quasi neri non contano. Anche l'import .html tiene la formattazione. Nel prompter le parole per
+  la voce possono stare su più nodi di testo (`node/start` … `endNode/end`). Niente sillabazione: `hyphens: manual`.
 - Voce (`voice.js`, modalità di scorrimento `voice`): Web Speech API (`webkitSpeechRecognition`), continuo con
   riavvio automatico. `findMatch` allinea le ultime 5 parole sentite (LCS con parole «uguali» = identiche, prefisso
   o una lettera diversa; paroline pesano 0,5) a una finestra di 30 parole avanti (soglia 2) o 150 (soglia 3,5).

@@ -52,6 +52,7 @@ export async function restoreBackup(file, { askSettings = true } = {}) {
       id: s.id,
       title: String(s.title || 'Senza titolo'),
       text: s.text,
+      html: typeof s.html === 'string' ? s.html : null,
       duration: Number.isFinite(s.duration) && s.duration > 0 ? s.duration : null,
       createdAt: Number(s.createdAt) || Date.now(),
       updatedAt: Number(s.updatedAt) || Date.now(),

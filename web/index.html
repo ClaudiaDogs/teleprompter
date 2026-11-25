@@ -61,7 +61,16 @@
     <button id="ed-estimate" class="btn small">Usa la stima</button>
     <span id="ed-saved" class="muted"></span>
   </div>
-  <textarea id="ed-text" placeholder="Scrivi o incolla qui il testo dello script"></textarea>
+  <div id="ed-tools" class="ed-tools" role="toolbar" aria-label="Formattazione">
+    <button class="fmt" data-fmt="bold" aria-label="Grassetto"><b>G</b></button>
+    <button class="fmt" data-fmt="italic" aria-label="Corsivo"><i>C</i></button>
+    <button class="fmt" data-fmt="underline" aria-label="Sottolineato"><u>S</u></button>
+    <button class="fmt" data-fmt="strike" aria-label="Barrato"><s>abc</s></button>
+    <button class="fmt" data-fmt="highlight" aria-label="Evidenzia"><mark>Evidenzia</mark></button>
+    <button class="fmt" data-fmt="clear">Togli formato</button>
+  </div>
+  <div id="ed-text" class="rich-input" contenteditable="true" spellcheck="true"
+    data-placeholder="Scrivi o incolla qui il testo dello script"></div>
 </section>
 
 <!-- PROMPTER -->
@@ -212,7 +221,7 @@
   </div>
   <div class="dlg-body">
     <p class="muted small">Tocca il riquadro, tieni premuto e scegli <strong>Incolla</strong>.</p>
-    <textarea id="paste-text" placeholder="Tieni premuto qui e scegli Incolla"></textarea>
+    <div id="paste-text" class="rich-input" contenteditable="true" data-placeholder="Tieni premuto qui e scegli Incolla"></div>
     <div class="cl-actions">
       <button id="paste-ok" class="btn primary">Crea lo script</button>
       <button id="paste-clip" class="btn">Leggi dagli appunti</button>

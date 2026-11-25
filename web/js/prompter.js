@@ -9,6 +9,7 @@ import { h, clamp, toast, fmtTime, estimateSeconds, WPM } from './util.js';
 import { buildPanel } from './panel.js';
 import { VoiceListener, WORD_RE, norm, findMatch, voiceSupported } from './voice.js';
 import { settingsSchema } from './settings-schema.js';
+import { scriptLines, renderLines } from './rich.js';
 
 const BAR_HIDE_MS = 2500;
 const DRAG_THRESHOLD = 8;
@@ -86,7 +87,7 @@ export class Prompter {
     this.cfgCache = null;
     this.el.view.classList.toggle('follower', !!follow);
     this.script = script;
-    this.renderText(script.text);
+    this.renderScript(script);
     this.isOpen = true;
     this.phase = 'paused';
     this.offset = 0;
@@ -123,18 +124,27 @@ export class Prompter {
     this.onClose();
   }
 
-  renderText(text) {
-    const frag = document.createDocumentFragment();
+  // Testo formattato (grassetti, evidenziazioni…): una parola può stare a cavallo di più nodi
+  // di testo, quindi per ogni parola si tiene il nodo e la posizione di inizio e di fine.
+  renderScript(script) {
+    this.el.text.replaceChildren(renderLines(scriptLines(script)));
     this.words = [];
-    for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
-      const p = h('p', null, line.trim() === '' ? ' ' : line);
-      const node = p.firstChild;
-      for (const m of line.matchAll(WORD_RE)) {
-        this.words.push({ n: norm(m[0]), node, start: m.index, end: m.index + m[0].length });
+    for (const p of this.el.text.children) {
+      const nodes = [];
+      let str = '';
+      const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) { nodes.push({ n, at: str.length }); str += n.nodeValue; }
+      const locate = idx => {
+        let k = nodes.length - 1;
+        while (k > 0 && nodes[k].at > idx) k--;
+        return [nodes[k].n, idx - nodes[k].at];
+      };
+      for (const m of str.matchAll(WORD_RE)) {
+        const [node, start] = locate(m.index);
+        const [endNode, last] = locate(m.index + m[0].length - 1);
+        this.words.push({ n: norm(m[0]), node, start, endNode, end: last + 1 });
       }
-      frag.append(p);
     }
-    this.el.text.replaceChildren(frag);
     this.wordY.clear();
     this.voiceIndex = -1;
     this.voiceDirty = false;
@@ -240,7 +250,7 @@ export class Prompter {
     const w = this.words[i];
     const r = document.createRange();
     r.setStart(w.node, w.start);
-    r.setEnd(w.node, w.end);
+    r.setEnd(w.endNode, w.end);
     const rect = r.getBoundingClientRect(), tr = this.el.text.getBoundingClientRect();
     // il testo può essere ribaltato in verticale: si misura dal lato giusto
     y = this.cfg().flipV ? tr.bottom - rect.bottom : rect.top - tr.top;

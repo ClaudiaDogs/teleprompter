@@ -76,7 +76,7 @@ function libraryItems(scripts) {
 
 function sendScript(conn) {
   const s = prompter.script;
-  const msg = { t: 'script', id: s.id, title: s.title, text: s.text };
+  const msg = { t: 'script', id: s.id, title: s.title, text: s.text, html: s.html || null };
   conn ? conn.send(msg) : host.send(msg);
 }
 
@@ -221,7 +221,7 @@ function openFollower(script) {
 }
 
 function displayMessage(m) {
-  if (m.t === 'script') openFollower({ id: m.id, title: m.title, text: m.text, duration: null });
+  if (m.t === 'script') openFollower({ id: m.id, title: m.title, text: m.text, html: m.html || null, duration: null });
   else if (m.t === 'settings') { follow.settings = m.s; prompter.updateFollow({ settings: m.s }); }
   else if (m.t === 'status') {
     follow.status = m;

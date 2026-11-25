@@ -1,7 +1,8 @@
 import { db, newScript } from './db.js';
-import { h, toast, fmtTime, estimateSeconds, countWords, normalize, tidy, titleFrom } from './util.js';
+import { h, toast, fmtTime, estimateSeconds, countWords, normalize, titleFrom } from './util.js';
 import { importFile, fileExt } from './importers.js';
 import { exportBackup, restoreBackup, lastBackup } from './backup.js';
+import { fromDOM, renderLines, scriptFields, pasteRich, readClipboard } from './rich.js';
 
 const BACKUP_WARN_DAYS = 14;
 
@@ -117,7 +118,7 @@ export class Library {
       case 'edit': this.onEdit(s); break;
       case 'read': this.onRead(s); break;
       case 'dup': {
-        const c = { ...newScript(s.title + ' (copia)', s.text), duration: s.duration };
+        const c = { ...newScript(s.title + ' (copia)', s.text), html: s.html || null, duration: s.duration };
         await db.put(c);
         toast('Script duplicato');
         this.refresh();
@@ -141,19 +142,23 @@ export class Library {
     const area = this.pasteArea = q('paste-text');
     const clip = q('paste-clip');
     clip.hidden = !navigator.clipboard?.readText;
+    const syncEmpty = () => area.classList.toggle('empty', !area.textContent.trim());
+    area.addEventListener('input', syncEmpty);
+    area.addEventListener('paste', e => { if (pasteRich(e)) syncEmpty(); });
     q('paste-close').addEventListener('click', () => dlg.close());
     clip.addEventListener('click', async () => {
       try {
-        const t = await navigator.clipboard.readText();
-        if (t) area.value = t; else toast('Gli appunti sono vuoti');
+        const lines = await readClipboard();
+        if (lines.length) { area.replaceChildren(renderLines(lines, { editor: true })); syncEmpty(); }
+        else toast('Gli appunti sono vuoti');
       } catch {
         toast('Il browser non permette di leggere gli appunti: tieni premuto nel riquadro', 3500);
       }
     });
     q('paste-ok').addEventListener('click', async () => {
-      const text = tidy(area.value);
-      if (!text) { toast('Il riquadro è vuoto'); return; }
-      const s = newScript(titleFrom(text), text);
+      const { text, html } = scriptFields(fromDOM(area));
+      if (!text.trim()) { toast('Il riquadro è vuoto'); return; }
+      const s = { ...newScript(titleFrom(text), text), html };
       await db.put(s);
       dlg.close();
       toast('Script creato');
@@ -163,7 +168,8 @@ export class Library {
 
   paste() {
     if (!this.pasteDlg) this.bindPaste();
-    this.pasteArea.value = '';
+    this.pasteArea.replaceChildren();
+    this.pasteArea.classList.add('empty');
     this.pasteDlg.showModal();
     this.pasteArea.focus();
   }
@@ -182,9 +188,9 @@ export class Library {
           ok++;
           continue;
         }
-        const { title, text } = await importFile(f);
+        const { title, text, html } = await importFile(f);
         if (!text) throw new Error('file vuoto');
-        await db.put(newScript(title, text));
+        await db.put({ ...newScript(title, text), html: html || null });
         ok++;
       } catch (err) {
         errors.push(`${f.name}: ${err.message}`);

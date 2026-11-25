@@ -1,6 +1,7 @@
 // Il telecomando sul telefono: comanda l'iPad e ne mostra una copia fedele dello schermo
 // (stesse proporzioni, carattere, colori, margini, linea guida, timer e conto alla rovescia),
 // senza l'effetto specchio, insieme ad avanzamento e tempi.
+import { scriptLines, renderLines } from './rich.js';
 import { h, fmtTime, clamp } from './util.js';
 import { buildPanel } from './panel.js';
 import { settingsSchema } from './settings-schema.js';
@@ -204,10 +205,8 @@ export class RemoteView {
   // ---------- copia dello schermo del prompter ----------
 
   setScript(m) {
-    this.script = { id: m.id, text: m.text || '' };
-    const frag = document.createDocumentFragment();
-    for (const line of this.script.text.split('\n')) frag.append(h('p', null, line.trim() === '' ? ' ' : line));
-    this.el.ptext.replaceChildren(frag);
+    this.script = { id: m.id, text: m.text || '', html: m.html || null };
+    this.el.ptext.replaceChildren(renderLines(scriptLines(this.script)));
     this.offset = 0;
     this.layout();
     this.render();

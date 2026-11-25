@@ -65,9 +65,10 @@ export class Prompter {
     this.refreshPanel = () => {};
     settings.subscribe(() => { if (this.isOpen && !this.follower) { this.applyStyle(); this.refreshPanel(); this.syncVoice(); } });
     new ResizeObserver(() => {
-      this.cfgCache = null;
       if (this.isOpen) { this.layout(); this.render(true); }
     }).observe(this.el.clip);
+    // secondo schermo: la scena ha le misure dell'iPad, cambia solo l'ingrandimento
+    new ResizeObserver(() => { if (this.isOpen && this.follower) this.applyStyle(); }).observe(this.el.stage);
     document.addEventListener('visibilitychange', () => {
       if (this.isOpen && document.visibilityState === 'visible') this.lockScreen();
     });
@@ -156,16 +157,31 @@ export class Prompter {
 
   // ---------- aspetto e misure ----------
 
-  // Impostazioni in uso: le proprie oppure, sul secondo schermo, quelle dell'iPad riscalate
-  // sulla larghezza di questo schermo (così le righe vanno a capo negli stessi punti).
+  // Impostazioni in uso: le proprie oppure, sul secondo schermo, quelle dell'iPad così come sono,
+  // anche lo specchio. Il secondo schermo impagina con le misure in pixel dell'iPad e poi
+  // ingrandisce tutta la scena (fitHost): righe, a capo e posizioni sono identici all'iPad.
   cfg() {
     const f = this.follower;
     if (!f) return settings.get();
-    if (this.cfgCache) return this.cfgCache;
-    const hs = f.settings || settings.get();
-    const k = f.hostW > 0 ? this.el.stage.clientWidth / f.hostW : 1;
-    // anche lo specchio è quello dell'iPad (richiesta dell'utente: il secondo schermo segue tutto)
-    return this.cfgCache = { ...hs, fontSize: hs.fontSize * k, timerSize: hs.timerSize * k };
+    return this.cfgCache ??= { ...(f.settings || settings.get()) };
+  }
+
+  // Scena del secondo schermo: grande come lo schermo dell'iPad, poi scalata per stare
+  // in questo schermo (con bande nere se le proporzioni sono diverse).
+  fitHost(fx, fy) {
+    const f = this.follower, m = this.el.mirror.style;
+    if (!f || !(f.hostW > 0 && f.hostH > 0)) {
+      Object.assign(m, { left: '', top: '', width: '', height: '', right: '', bottom: '' });
+      m.transform = `scale(${fx}, ${fy})`;
+      return;
+    }
+    const W = this.el.stage.clientWidth, H = this.el.stage.clientHeight;
+    const k = Math.min(W / f.hostW, H / f.hostH) || 1;
+    Object.assign(m, {
+      left: (W - f.hostW) / 2 + 'px', top: (H - f.hostH) / 2 + 'px', right: 'auto', bottom: 'auto',
+      width: f.hostW + 'px', height: f.hostH + 'px',
+    });
+    m.transform = `scale(${k * fx}, ${k * fy})`;
   }
 
   // Secondo schermo: nuove impostazioni o nuova posizione dall'iPad.
@@ -177,7 +193,11 @@ export class Prompter {
     if (status) {
       f.status = status;
       f.at = performance.now();
-      if (status.stageW && status.stageW !== f.hostW) { f.hostW = status.stageW; restyle = true; }
+      if (status.stageW && (status.stageW !== f.hostW || status.stageH !== f.hostH)) {
+        f.hostW = status.stageW;
+        f.hostH = status.stageH;
+        restyle = true;
+      }
     }
     if (restyle && this.isOpen) { this.cfgCache = null; this.applyStyle(); }
   }
@@ -199,7 +219,8 @@ export class Prompter {
 
   applyStyle() {
     const s = this.cfg(), e = this.el;
-    e.mirror.style.transform = `scale(${s.flipH ? -1 : 1}, ${s.flipV ? -1 : 1})`;
+    this.fitHost(s.flipH ? -1 : 1, s.flipV ? -1 : 1);
+    e.countdown.style.fontSize = Math.min(e.mirror.offsetWidth, e.mirror.offsetHeight) * 0.42 + 'px';
     Object.assign(e.viewport.style, {
       left: s.marginLeft + '%', right: s.marginRight + '%', top: s.marginTop + '%', bottom: s.marginBottom + '%',
     });

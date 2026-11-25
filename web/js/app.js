@@ -214,7 +214,7 @@ function openFollower(script) {
   show('prompter');
   prompter.open(script || { id: '', title: '', text: '' }, {
     follow: {
-      settings: follow.settings, status: follow.status, hostW: follow.status?.stageW || 0, at: performance.now(),
+      settings: follow.settings, status: follow.status, hostW: follow.status?.stageW || 0, hostH: follow.status?.stageH || 0, at: performance.now(),
     },
   });
   views.prompter.classList.toggle('waiting', !script);

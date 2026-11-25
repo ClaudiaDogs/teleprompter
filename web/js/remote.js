@@ -14,7 +14,7 @@ export class RemoteView {
       title: q('rm-title'), state: q('rm-state'), msg: q('rm-msg'), library: q('rm-library'), list: q('rm-list'),
       main: q('rm-main'), elapsed: q('rm-elapsed'), remaining: q('rm-remaining'), progress: q('rm-progress'),
       play: q('rm-play'), speed: q('rm-speed'), flipH: q('rm-flipH'), flipV: q('rm-flipV'),
-      preview: q('rm-preview'), pview: q('rm-pview'), ptext: q('rm-ptext'), pguide: q('rm-pguide'),
+      preview: q('rm-preview'), pstage: q('rm-pstage'), pview: q('rm-pview'), ptext: q('rm-ptext'), pguide: q('rm-pguide'),
       ptimer: q('rm-ptimer'), pcount: q('rm-pcount'), pwait: q('rm-pwait'),
       controls: q('rm-controls'), settings: q('rm-settings'), settingsBody: q('rm-settings-body'),
     };
@@ -212,7 +212,9 @@ export class RemoteView {
     this.render();
   }
 
-  // Riquadro con le proporzioni dello schermo dell'iPad; tutto il resto in scala, come sul prompter.
+  // Riquadro con le proporzioni dello schermo dell'iPad. Dentro, la scena è impaginata con le
+  // misure in pixel dell'iPad e poi rimpicciolita (k): le righe vanno a capo negli stessi punti
+  // e tutto sta alla stessa altezza dello schermo, identico a quello che vede chi legge.
   layout() {
     const e = this.el, st = this.status, s = this.hostSettings;
     if (e.main.hidden) return;
@@ -225,12 +227,14 @@ export class RemoteView {
     if (ht > maxH) { ht = maxH; w = (ht * hostW) / hostH; }
     e.preview.style.width = w + 'px';
     e.preview.style.height = ht + 'px';
-    const k = w / hostW;
-    e.pcount.style.fontSize = Math.min(ht, w) * 0.42 + 'px';
+    const k = this.k = w / hostW;
+    Object.assign(e.pstage.style, { width: hostW + 'px', height: hostH + 'px', transform: `scale(${k})` });
+    e.pcount.style.fontSize = Math.min(hostW, hostH) * 0.42 + 'px';
     if (!s) return;
 
-    const fontPx = s.fontSize * k;
-    const arrowPx = Math.round(s.fontSize * 0.45) * k;
+    // stessi calcoli di Prompter.applyStyle, in pixel dell'iPad
+    const fontPx = s.fontSize;
+    const arrowPx = Math.round(s.fontSize * 0.45);
     const arrows = s.guideVisible && s.guideStyle === 'arrows';
     Object.assign(e.pview.style, {
       left: s.marginLeft + '%', right: s.marginRight + '%', top: s.marginTop + '%', bottom: s.marginBottom + '%',
@@ -238,7 +242,7 @@ export class RemoteView {
     Object.assign(e.ptext.style, {
       fontSize: fontPx + 'px', fontFamily: s.fontFamily, fontWeight: s.bold ? '700' : '400',
       lineHeight: String(s.lineHeight), color: s.textColor, textAlign: s.align,
-      padding: arrows ? `0 ${arrowPx * 1.1 + 12 * k}px` : '0',
+      padding: arrows ? `0 ${arrowPx * 1.1 + 12}px` : '0',
     });
     const g = e.pguide;
     g.hidden = !s.guideVisible;
@@ -250,7 +254,7 @@ export class RemoteView {
     g.style.setProperty('--arrow', arrowPx + 'px');
     e.ptimer.hidden = !s.timerVisible;
     Object.assign(e.ptimer.style, {
-      left: s.timerX + '%', top: s.timerY + '%', fontSize: s.timerSize * k + 'px', opacity: s.timerOpacity,
+      left: s.timerX + '%', top: s.timerY + '%', fontSize: s.timerSize + 'px', opacity: s.timerOpacity,
     });
 
     const progress = this.maxOffset > 0 ? this.offset / this.maxOffset : 0;
@@ -285,7 +289,7 @@ export class RemoteView {
   }
 
   place() {
-    const dpr = devicePixelRatio || 1;
+    const dpr = (devicePixelRatio || 1) * (this.k || 1); // pixel veri dello schermo, dopo la scala
     const y = Math.round((this.padTop - this.offset) * dpr) / dpr;
     if (y !== this.shown.y) { this.shown.y = y; this.el.ptext.style.transform = `translate3d(0,${y}px,0)`; }
   }
@@ -322,7 +326,7 @@ export class RemoteView {
       const dy = e.clientY - d.y;
       if (!d.moved && Math.abs(dy) < 8) return;
       if (!d.moved) { d.moved = true; d.y = e.clientY; d.start = this.offset; return; }
-      this.offset = clamp(d.start - dy, 0, this.maxOffset);
+      this.offset = clamp(d.start - dy / (this.k || 1), 0, this.maxOffset); // dito in pixel dell'iPad
       this.place();
       const now = Date.now();
       if (now - lastSent > 120 && this.maxOffset > 0) { lastSent = now; this.send('seek', this.offset / this.maxOffset); }

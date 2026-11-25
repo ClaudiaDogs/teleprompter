@@ -61,6 +61,13 @@ La versione Swift qui sotto (`Teleprompter.swiftpm`) resta solo come riferimento
   (Google Documenti: `<b style="font-weight:normal">`; Word: `background` per l'evidenziato); sfondi bianchi,
   grigi chiari o quasi neri non contano. Anche l'import .html tiene la formattazione. Nel prompter le parole per
   la voce possono stare su più nodi di testo (`node/start` … `endNode/end`). Niente sillabazione: `hyphens: manual`.
+- Schermi identici (dalla 0.7.1): secondo schermo e anteprima del telecomando impaginano la scena con le misure
+  in pixel dell'iPad (`stageW`×`stageH`, impostazioni NON riscalate) e poi la scalano tutta con `transform`
+  (`Prompter.fitHost`, `#rm-pstage`). Prima si riscalavano i caratteri e le righe andavano a capo in punti diversi.
+  Verificato in locale: stesse righe e stessa posizione (frazione dell'altezza) su iPad, telefono e monitor 16:9.
+  Restano possibili differenze solo se un dispositivo non ha il carattere scelto (es. Android senza San Francisco).
+- Pubblicazione: build e deploy in due job (`pages.yml`), azioni v5+; nello stesso job deploy-pages falliva con
+  «No artifacts named github-pages».
 - Voce (`voice.js`, modalità di scorrimento `voice`): Web Speech API (`webkitSpeechRecognition`), continuo con
   riavvio automatico. `findMatch` allinea le ultime 5 parole sentite (LCS con parole «uguali» = identiche, prefisso
   o una lettera diversa; paroline pesano 0,5) a una finestra di 30 parole avanti (soglia 2) o 150 (soglia 3,5).
